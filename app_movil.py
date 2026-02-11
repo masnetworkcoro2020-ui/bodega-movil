@@ -3,17 +3,17 @@ from supabase import create_client
 import pandas as pd
 
 # 1. CONFIGURACIÓN VISUAL
-st.set_page_config(page_title="BODEGA PRO V2 - LOGIN", layout="centered")
+st.set_page_config(page_title="BODEGA PRO V2 - SEGURIDAD", layout="centered")
 
 # 2. CONEXIÓN (TU LLAVE MAESTRA)
 URL = "https://aznkqqrakzhvbtlnjaxz.supabase.co"
 KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF6bmtxcXJha3podmJ0bG5qYXh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5NjY4NTAsImV4cCI6MjA4NTU0Mjg1MH0.4LRC-DsHidHkYyS4CiLUy51r-_lEgGPMvKL7_DnJWFI"
 supabase = create_client(URL, KEY)
 
-# 3. RUTA DEL LOGO
+# 3. RUTA DEL LOGO (MANTENEMOS EL DE GITHUB)
 logo_url = "https://raw.githubusercontent.com/masnetworkcoro2020-ui/bodega-movil/main/logo.png"
 
-# 4. ESTILOS CSS
+# 4. ESTILOS CSS (FONDO LIMPIO PARA MÓVIL)
 st.markdown(f"""
     <style>
     .stApp {{ background-color: #FFFFFF; }}
@@ -22,26 +22,41 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNCIÓN DE LOGIN ---
+# --- FUNCIÓN DE LOGIN INTELIGENTE ---
 def login():
     st.markdown(f'<div class="main-logo"><img src="{logo_url}" width="150"></div>', unsafe_allow_html=True)
-    st.subheader("🔐 Acceso Restringido")
+    st.subheader("🔐 Acceso de Seguridad")
     
     with st.form("login_form"):
-        user = st.text_input("Usuario").lower().strip()
-        password = st.text_input("Contraseña", type="password")
+        user_input = st.text_input("Usuario").lower().strip()
+        pass_input = st.text_input("Contraseña", type="password")
         btn = st.form_submit_button("INGRESAR")
         
         if btn:
-            # Buscamos en la base de datos si existe y es Administrador
-            res = supabase.table("usuarios").select("*").eq("usuario", user).eq("clave", password).eq("rol", "Administrador").execute()
-            
-            if res.data:
+            # 1. LLAVE MAESTRA DE EMERGENCIA
+            if user_input == "admin" and pass_input == "12345":
                 st.session_state["autenticado"] = True
-                st.success("Acceso concedido")
                 st.rerun()
+            
+            # 2. BÚSQUEDA EN TU TABLA DE USUARIOS
             else:
-                st.error("Usuario no autorizado o datos incorrectos")
+                try:
+                    res = supabase.table("usuarios").select("*").eq("usuario", user_input).eq("clave", pass_input).execute()
+                    
+                    if res.data:
+                        # Sacamos el rol y lo pasamos a minúsculas para que no falle
+                        rol_usuario = str(res.data[0].get("rol", "")).lower()
+                        
+                        # Aceptamos maestro, administrador o admin
+                        if rol_usuario in ["maestro", "administrador", "admin"]:
+                            st.session_state["autenticado"] = True
+                            st.rerun()
+                        else:
+                            st.error(f"El rol '{rol_usuario}' no tiene permiso de acceso.")
+                    else:
+                        st.error("Usuario o contraseña incorrectos.")
+                except Exception as e:
+                    st.error("Error de conexión con la base de datos.")
 
 # --- CONTROL DE SESIÓN ---
 if "autenticado" not in st.session_state:
@@ -50,14 +65,15 @@ if "autenticado" not in st.session_state:
 if not st.session_state["autenticado"]:
     login()
 else:
-    # --- SI ESTÁ AUTENTICADO, MUESTRA EL SISTEMA ---
+    # --- INTERFAZ DEL SISTEMA CUANDO YA ENTRASTE ---
     st.markdown(f'<div class="main-logo"><img src="{logo_url}" width="120"></div>', unsafe_allow_html=True)
     
-    if st.sidebar.button("🚪 CERRAR SESIÓN"):
-        st.session_state["autenticado"] = False
-        st.rerun()
+    with st.sidebar:
+        if st.button("🚪 Cerrar Sesión"):
+            st.session_state["autenticado"] = False
+            st.rerun()
 
-    # LÓGICA DE DATOS
+    # Lógica de la Tasa
     try:
         res_tasa = supabase.table("ajustes").select("valor").eq("id", 1).execute()
         tasa_v = float(res_tasa.data[0]['valor']) if res_tasa.data else 40.0
@@ -68,10 +84,10 @@ else:
 
     with pestanas[0]:
         st.metric("Tasa Actual", f"Bs. {tasa_v:,.2f}")
-        nueva_tasa = st.number_input("Nueva Tasa", value=tasa_v, step=0.01)
+        nueva_tasa = st.number_input("Cambiar Tasa", value=tasa_v, step=0.01)
         if st.button("✅ ACTUALIZAR TASA"):
             supabase.table("ajustes").update({"valor": str(nueva_tasa)}).eq("id", 1).execute()
-            st.success("¡Tasa actualizada!")
+            st.success("Tasa guardada en la nube.")
             st.rerun()
 
     with pestanas[1]:
@@ -85,12 +101,7 @@ else:
             st.dataframe(df, use_container_width=True, hide_index=True)
 
     with pestanas[2]:
-        st.subheader("Registrar Personal")
-        with st.form("new_user"):
-            u = st.text_input("Usuario")
-            p = st.text_input("Clave", type="password")
-            r = st.selectbox("Rol", ["Operador", "Administrador"])
-            if st.form_submit_button("👤 CREAR"):
-                if u and p:
-                    supabase.table("usuarios").insert({"usuario": u.lower(), "clave": p, "rol": r}).execute()
-                    st.success("Usuario creado")
+        st.subheader("Usuarios Registrados")
+        # Mostrar la lista actual de tu captura
+        res_u = supabase.table("usuarios").select("usuario, rol").execute()
+        st.table(pd.DataFrame(res_u.data))
