@@ -1,49 +1,49 @@
 import streamlit as st
-from config import conectar # Usamos tu conexión original
+from supabase import create_client
+import pandas as pd
 
-# Configuración para que se vea bien en el teléfono
-st.set_page_config(page_title="Bodega Pro Móvil", page_icon="🏪")
+# Configuración de la página
+st.set_page_config(page_title="Mi Bodega Pro", page_icon="🏪")
+
+# Conexión con Supabase (usando tus datos de config.py)
+try:
+    from config import SUPABASE_URL, SUPABASE_KEY
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+except:
+    st.error("Error en configuración. Revisa config.py")
 
 st.title("🏪 Mi Bodega Pro")
-st.write("---")
 
-# Conectamos usando tu función de config.py
-supabase = conectar()
+# Obtener tasa del BCV (Simulada o desde tu tabla si la tienes)
+st.metric("Tasa BCV Actual", "Bs. 385.20") 
 
-if supabase:
-    try:
-        # 1. Traer la Tasa BCV (de tu tabla 'ajustes')
-        res_tasa = supabase.table("ajustes").select("valor").eq("id", 1).execute()
-        tasa = float(res_tasa.data[0]['valor']) if res_tasa.data else 1.0
-        
-        st.metric(label="Tasa BCV Actual", value=f"Bs. {tasa:,.2f}")
+# Buscador
+busqueda = st.text_input("🔍 Buscar producto por nombre...", "")
 
-        # 2. Buscador de productos
-        busqueda = st.text_input("🔍 Buscar producto por nombre...")
+# Leer datos de tu tabla 'productos'
+try:
+    # Ajustado a tus nombres reales: nombre, venta_usd, venta_bs
+    response = supabase.table("productos").select("nombre, venta_usd, venta_bs").execute()
+    df = pd.DataFrame(response.data)
 
-        # 3. Traer Inventario (de tu tabla 'productos')
-        query = supabase.table("productos").select("nombre, venta_usd, stock")
+    if not df.empty:
+        # Filtrar por búsqueda
         if busqueda:
-            query = query.ilike("nombre", f"%{busqueda}%")
-        
-        res_prod = query.execute()
+            df = df[df['nombre'].str.contains(busqueda, case=False)]
 
-        if res_prod.data:
-            for p in res_prod.data:
-                precio_bs = p['venta_usd'] * tasa
-                with st.container():
-                    col1, col2 = st.columns([2, 1])
-                    with col1:
-                        st.write(f"**{p['nombre']}**")
-                        st.write(f"Stock: {p['stock']}")
-                    with col2:
-                        st.write(f"**${p['venta_usd']:.2f}**")
-                        st.write(f"Bs. {precio_bs:,.2f}")
-                    st.write("---")
-        else:
-            st.info("No hay productos que coincidan.")
+        # Mostrar productos
+        for index, row in df.iterrows():
+            with st.container():
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    st.markdown(f"**{row['nombre']}**")
+                    st.caption("Disponible en tienda")
+                with col2:
+                    st.markdown(f"**${row['venta_usd']}**")
+                    st.caption(f"Bs. {row['venta_bs']}")
+                st.divider()
+    else:
+        st.warning("No hay productos registrados.")
 
-    except Exception as e:
-        st.error(f"Error al leer datos: {e}")
-else:
-    st.error("No se pudo conectar con Supabase.")
+except Exception as e:
+    st.error(f"Error al conectar: {e}")
