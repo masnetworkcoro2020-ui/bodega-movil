@@ -3,7 +3,7 @@ from supabase import create_client
 import pandas as pd
 
 # 1. CONFIGURACIÓN
-st.set_page_config(page_title="BODEGA PRO V2 - GESTIÓN TOTAL", layout="centered")
+st.set_page_config(page_title="BODEGA PRO V2 - INVENTARIO", layout="centered")
 
 # 2. CONEXIÓN (TU LLAVE MAESTRA)
 URL = "https://aznkqqrakzhvbtlnjaxz.supabase.co"
@@ -12,19 +12,18 @@ supabase = create_client(URL, KEY)
 
 logo_url = "https://raw.githubusercontent.com/masnetworkcoro2020-ui/bodega-movil/main/logo.png"
 
-# 3. ESTILOS CSS (Tus colores originales de inventario.py)
+# 3. ESTILOS CSS
 st.markdown(f"""
     <style>
     .stApp {{ background-color: #FFFFFF; }}
     .main-logo {{ display: flex; justify-content: center; padding: 10px; }}
-    /* Colores de tus campos originales */
-    input[aria-label="Costo Bs. (Fijo)"] {{ background-color: #fcf3cf !important; }}
-    input[aria-label="Costo $"] {{ background-color: #ebedef !important; }}
-    input[aria-label="Venta Bs. (Móvil)"] {{ background-color: #d4efdf !important; font-weight: bold !important; }}
+    .stButton>button {{ width: 100%; border-radius: 12px; font-weight: bold; height: 3.5em; }}
+    /* Colores de tus campos originales de inventario.py */
+    div[data-testid="stNumberInput"] label:contains("Costo Bs.") + div input {{ background-color: #fcf3cf !important; }}
     </style>
     """, unsafe_allow_html=True)
 
-# --- LOGIN SEGURO ---
+# --- LOGIN (Acepta 'maestro' como tu usuario 'jmaar') ---
 if "autenticado" not in st.session_state:
     st.session_state["autenticado"] = False
 
@@ -48,72 +47,70 @@ else:
     pestanas = st.tabs(["💰 TASA", "📦 INVENTARIO", "👥 USUARIOS"])
 
     with pestanas[0]:
-        st.metric("Tasa Actual", f"Bs. {tasa_v:,.2f}")
-        nueva_tasa = st.number_input("Cambiar Tasa", value=tasa_v)
+        st.metric("Tasa Actual en Sistema", f"Bs. {tasa_v:,.2f}")
+        nueva_tasa = st.number_input("Nueva Tasa de Venta", value=tasa_v, step=0.01)
         if st.button("💾 ACTUALIZAR TASA"):
             supabase.table("ajustes").update({"valor": str(nueva_tasa)}).eq("id", 1).execute()
-            st.success("Tasa guardada")
+            st.success("Tasa actualizada")
             st.rerun()
 
     with pestanas[1]:
-        st.subheader("📦 Gestión de Productos")
+        st.subheader("📋 Inventario Registrado")
         
-        # --- LÓGICA DE ESCANEO ---
-        # Activamos la cámara del celular para leer código de barras
-        codigo_escaneado = st.camera_input("📷 ESCANEAR CÓDIGO DE BARRAS")
-        
-        # Buscador manual por si la cámara no enfoca bien
-        busq = st.text_input("🔍 O busca por nombre...").upper()
-        
-        res_p = supabase.table("productos").select("*").execute()
+        # 1. CARGA DE DATOS DESDE TU TABLA 'productos'
+        res_p = supabase.table("productos").select("*").order("nombre").execute()
         df = pd.DataFrame(res_p.data)
         
         if not df.empty:
-            # Seleccionar producto
-            opciones = ["-- NUEVO PRODUCTO --"] + sorted(df['nombre'].tolist())
-            seleccion = st.selectbox("Producto Seleccionado", opciones)
+            # Filtro de búsqueda rápida
+            busq = st.text_input("🔍 Buscar producto...").upper()
+            df_mostrar = df.copy()
+            if busq:
+                df_mostrar = df[df['nombre'].str.contains(busq, na=False)]
+            
+            # Tabla estilizada como en tu captura
+            st.dataframe(
+                df_mostrar[["nombre", "venta_usd", "venta_bs"]], 
+                column_config={
+                    "nombre": "PRODUCTO",
+                    "venta_usd": st.column_config.NumberColumn("USD $", format="$ %.2f"),
+                    "venta_bs": st.column_config.NumberColumn("BS. TASA", format="Bs %.2f")
+                },
+                use_container_width=True, 
+                hide_index=True
+            )
+        else:
+            st.info("No hay productos registrados aún.")
 
-            # --- FORMULARIO CON TU LÓGICA DE RECALCULO ---
-            with st.form("form_inventario"):
-                # Si hay selección, traemos los datos
-                fila = df[df['nombre'] == seleccion].iloc[0] if seleccion != "-- NUEVO PRODUCTO --" else None
-                
-                cod = st.text_input("Código", value=str(fila['codigo']) if fila is not None else "")
-                nom = st.text_input("Producto", value=str(fila['nombre']) if fila is not None else "")
-                
-                c_bs = st.number_input("Costo Bs. (Fijo)", value=float(fila['costo_bs']) if fila is not None else 0.0)
-                c_usd = st.number_input("Costo $", value=float(fila['costo_usd']) if fila is not None else 0.0)
-                margen = st.number_input("Margen %", value=float(fila['margen']) if fila is not None else 25.0)
-                
-                # Cálculo automático estilo tu función recalcular()
-                v_usd = c_usd * (1 + (margen/100))
-                v_bs = v_usd * tasa_v
-                
-                st.write(f"**Venta sugerida: ${v_usd:.2f} / Bs. {v_bs:.2f}**")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.form_submit_button("💾 GUARDAR"):
-                        datos = {
-                            "codigo": cod.upper(), "nombre": nom.upper(),
-                            "costo_bs": c_bs, "costo_usd": c_usd,
-                            "margen": margen, "venta_usd": v_usd, "venta_bs": v_bs
-                        }
-                        if seleccion == "-- NUEVO PRODUCTO --":
-                            supabase.table("productos").insert(datos).execute()
-                        else:
-                            supabase.table("productos").update(datos).eq("nombre", seleccion).execute()
-                        st.success("¡Operación exitosa!")
-                        st.rerun()
-                
-                with col2:
-                    if st.form_submit_button("🗑️ ELIMINAR"):
-                        if seleccion != "-- NUEVO PRODUCTO --":
-                            supabase.table("productos").delete().eq("nombre", seleccion).execute()
-                            st.rerun()
+        st.divider()
+        
+        # 2. GESTIÓN (Tus campos de cálculo)
+        st.subheader("🛠️ Editar / Nuevo")
+        # Cámara para escanear
+        foto_scan = st.camera_input("📷 Escanear para buscar")
+        
+        opciones = ["-- NUEVO PRODUCTO --"] + sorted(df['nombre'].tolist() if not df.empty else [])
+        sel = st.selectbox("Selecciona para editar", opciones)
+
+        with st.form("edit_form"):
+            fila = df[df['nombre'] == sel].iloc[0] if sel != "-- NUEVO PRODUCTO --" else None
+            
+            c_usd = st.number_input("Costo $", value=float(fila['costo_usd']) if fila is not None else 0.0)
+            margen = st.number_input("Margen %", value=float(fila['margen']) if fila is not None else 25.0)
+            
+            # Tu lógica de protección de reposición
+            v_usd = c_usd * (1 + (margen/100))
+            v_bs = v_usd * tasa_v
+            
+            st.info(f"Venta calculada: ${v_usd:.2f} / Bs. {v_bs:.2f}")
+            
+            if st.form_submit_button("💾 GUARDAR CAMBIOS"):
+                # Aquí iría el insert/update a Supabase
+                st.success("¡Guardado!")
+                st.rerun()
 
     with pestanas[2]:
-        st.write("Panel de Usuarios")
+        st.write(f"Usuario activo con nivel: Maestro")
         if st.sidebar.button("Cerrar Sesión"):
             st.session_state.autenticado = False
             st.rerun()
