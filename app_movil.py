@@ -13,34 +13,38 @@ supabase = create_client(URL, KEY)
 # 3. RUTA DEL LOGO (TU GITHUB)
 logo_url = "https://raw.githubusercontent.com/masnetworkcoro2020-ui/bodega-movil/main/logo.png"
 
-# 4. ESTILOS CSS (LOGOS Y BOTONES)
+# 4. ESTILOS CSS (SIN FONDO, MÁXIMA CLARIDAD)
 st.markdown(f"""
     <style>
+    /* Fondo limpio para que no tape las letras */
     .stApp {{
-        background-image: linear-gradient(rgba(255,255,255,0.95), rgba(255,255,255,0.95)), 
-                          url("{logo_url}");
-        background-repeat: no-repeat;
-        background-attachment: fixed;
-        background-position: center center;
-        background-size: 300px;
+        background-color: #FFFFFF;
     }}
+    /* Contenedor del logo de arriba */
     .main-logo {{
         display: flex;
         justify-content: center;
-        margin-bottom: 20px;
+        padding: 10px 0px;
+        margin-bottom: 5px;
     }}
+    /* Botones estilo profesional */
     .stButton>button {{ 
         width: 100%; 
-        border-radius: 15px; 
+        border-radius: 12px; 
         font-weight: bold; 
         background-color: #1f538d; 
         color: white; 
+        height: 3.5em;
+    }}
+    /* Mejorar lectura de tablas en móvil */
+    [data-testid="stTable"] {{
+        font-size: 14px;
     }}
     </style>
     """, unsafe_allow_html=True)
 
-# --- ENCABEZADO CON LOGO CENTRADO ---
-st.markdown(f'<div class="main-logo"><img src="{logo_url}" width="200"></div>', unsafe_allow_html=True)
+# --- LOGO EN EL ENCABEZADO ---
+st.markdown(f'<div class="main-logo"><img src="{logo_url}" width="180"></div>', unsafe_allow_html=True)
 
 # 5. LÓGICA DE TASA
 try:
@@ -52,27 +56,35 @@ except:
 pestanas = st.tabs(["💰 TASA", "📦 INVENTARIO", "👥 USUARIOS"])
 
 with pestanas[0]:
-    st.metric("Tasa Actual", f"Bs. {tasa_v:,.2f}")
-    nueva_tasa = st.number_input("Nueva Tasa", value=tasa_v, step=0.1)
-    if st.button("💾 ACTUALIZAR"):
+    st.metric("Tasa Actual en Sistema", f"Bs. {tasa_v:,.2f}")
+    nueva_tasa = st.number_input("Actualizar Tasa", value=tasa_v, step=0.01)
+    if st.button("✅ GUARDAR TASA"):
         supabase.table("ajustes").update({"valor": str(nueva_tasa)}).eq("id", 1).execute()
-        st.success("¡Tasa al día!")
+        st.success("Tasa actualizada con éxito")
         st.rerun()
 
 with pestanas[1]:
-    busq = st.text_input("🔍 Buscar...").upper()
+    busq = st.text_input("🔍 Buscar producto...").upper()
     res_p = supabase.table("productos").select("nombre, venta_usd, venta_bs").execute()
     df = pd.DataFrame(res_p.data)
+    
     if not df.empty:
+        # Renombrar columnas para que se vean mejor en el celular
+        df.columns = ["PRODUCTO", "USD $", "BS. TASA"]
         if busq:
-            df = df[df['nombre'].str.contains(busq, na=False)]
+            df = df[df['PRODUCTO'].str.contains(busq, na=False)]
+        
+        # Mostrar tabla ajustada al ancho del teléfono
         st.dataframe(df, use_container_width=True, hide_index=True)
+    else:
+        st.warning("No hay productos cargados.")
 
 with pestanas[2]:
+    st.subheader("Nuevo Usuario")
     with st.form("new_user"):
         u = st.text_input("Usuario")
-        p = st.text_input("Clave", type="password")
-        if st.form_submit_button("➕ CREAR"):
+        p = st.text_input("Contraseña", type="password")
+        if st.form_submit_button("👤 CREAR USUARIO"):
             if u and p:
                 supabase.table("usuarios").insert({"usuario": u.lower(), "clave": p, "rol": "Operador"}).execute()
-                st.success("Usuario agregado")
+                st.success("¡Usuario creado!")
