@@ -4,20 +4,22 @@ import pandas as pd
 
 st.set_page_config(page_title="Mi Bodega Pro", page_icon="🏪")
 
-# Conexión
+# Ponemos tus datos directo aquí para que no den error
+URL = "https://aznkqqrakzhvbtlnjaxz.supabase.co"
+KEY = "TU_LLAVE_AQUI" # <--- MANO, PEGA AQUÍ TU LLAVE QUE ESTÁ EN CONFIG.PY
+
 try:
-    from config import SUPABASE_URL, SUPABASE_KEY
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-except:
-    st.error("Error en configuración. Revisa config.py")
+    supabase = create_client(URL, KEY)
+except Exception as e:
+    st.error(f"Error de conexión: {e}")
 
 st.title("🏪 Mi Bodega Pro")
-st.metric("Tasa BCV Actual", "Bs. 388.73") # Actualizada a tu última imagen
+st.metric("Tasa BCV Actual", "Bs. 388.73") 
 
 busqueda = st.text_input("🔍 Buscar producto...", "")
 
 try:
-    # Usando tus nombres reales de Supabase
+    # Usando tus columnas: nombre, venta_usd, venta_bs
     response = supabase.table("productos").select("nombre, venta_usd, venta_bs").execute()
     df = pd.DataFrame(response.data)
 
@@ -35,4 +37,4 @@ try:
                     st.caption(f"Bs. {row['venta_bs']}")
                 st.divider()
 except Exception as e:
-    st.error(f"Error: {e}")
+    st.error(f"Error al cargar datos: {e}")
