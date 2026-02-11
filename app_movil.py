@@ -3,105 +3,104 @@ from supabase import create_client
 import pandas as pd
 
 # 1. CONFIGURACIÓN VISUAL
-st.set_page_config(page_title="BODEGA PRO V2 - SEGURIDAD", layout="centered")
+st.set_page_config(page_title="BODEGA PRO V2 - GESTIÓN", layout="centered")
 
-# 2. CONEXIÓN (TU LLAVE MAESTRA)
+# 2. CONEXIÓN (Mantenemos tus credenciales)
 URL = "https://aznkqqrakzhvbtlnjaxz.supabase.co"
 KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF6bmtxcXJha3podmJ0bG5qYXh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5NjY4NTAsImV4cCI6MjA4NTU0Mjg1MH0.4LRC-DsHidHkYyS4CiLUy51r-_lEgGPMvKL7_DnJWFI"
 supabase = create_client(URL, KEY)
 
-# 3. RUTA DEL LOGO (MANTENEMOS EL DE GITHUB)
 logo_url = "https://raw.githubusercontent.com/masnetworkcoro2020-ui/bodega-movil/main/logo.png"
 
-# 4. ESTILOS CSS (FONDO LIMPIO PARA MÓVIL)
+# 3. ESTILOS CSS
 st.markdown(f"""
     <style>
     .stApp {{ background-color: #FFFFFF; }}
     .main-logo {{ display: flex; justify-content: center; padding: 10px; }}
-    .stButton>button {{ width: 100%; border-radius: 12px; font-weight: bold; background-color: #1f538d; color: white; height: 3.5em; }}
+    .stButton>button {{ width: 100%; border-radius: 12px; font-weight: bold; height: 3.5em; }}
+    .btn-update {{ background-color: #1f538d; color: white; }}
+    .btn-delete {{ background-color: #d32f2f; color: white; }}
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNCIÓN DE LOGIN INTELIGENTE ---
-def login():
-    st.markdown(f'<div class="main-logo"><img src="{logo_url}" width="150"></div>', unsafe_allow_html=True)
-    st.subheader("🔐 Acceso de Seguridad")
-    
-    with st.form("login_form"):
-        user_input = st.text_input("Usuario").lower().strip()
-        pass_input = st.text_input("Contraseña", type="password")
-        btn = st.form_submit_button("INGRESAR")
-        
-        if btn:
-            # 1. LLAVE MAESTRA DE EMERGENCIA
-            if user_input == "admin" and pass_input == "12345":
-                st.session_state["autenticado"] = True
-                st.rerun()
-            
-            # 2. BÚSQUEDA EN TU TABLA DE USUARIOS
-            else:
-                try:
-                    res = supabase.table("usuarios").select("*").eq("usuario", user_input).eq("clave", pass_input).execute()
-                    
-                    if res.data:
-                        # Sacamos el rol y lo pasamos a minúsculas para que no falle
-                        rol_usuario = str(res.data[0].get("rol", "")).lower()
-                        
-                        # Aceptamos maestro, administrador o admin
-                        if rol_usuario in ["maestro", "administrador", "admin"]:
-                            st.session_state["autenticado"] = True
-                            st.rerun()
-                        else:
-                            st.error(f"El rol '{rol_usuario}' no tiene permiso de acceso.")
-                    else:
-                        st.error("Usuario o contraseña incorrectos.")
-                except Exception as e:
-                    st.error("Error de conexión con la base de datos.")
-
-# --- CONTROL DE SESIÓN ---
+# --- LOGIN (Tu usuario 'jmaar' con rol 'maestro' ya entra aquí) ---
 if "autenticado" not in st.session_state:
     st.session_state["autenticado"] = False
 
 if not st.session_state["autenticado"]:
-    login()
+    st.markdown(f'<div class="main-logo"><img src="{logo_url}" width="150"></div>', unsafe_allow_html=True)
+    with st.form("login"):
+        u = st.text_input("Usuario").lower().strip()
+        p = st.text_input("Clave", type="password")
+        if st.form_submit_button("INGRESAR"):
+            res = supabase.table("usuarios").select("*").eq("usuario", u).eq("clave", p).execute()
+            if res.data and str(res.data[0].get("rol","")).lower() in ["maestro", "administrador"]:
+                st.session_state["autenticado"] = True
+                st.rerun()
+            else: st.error("Acceso denegado")
 else:
-    # --- INTERFAZ DEL SISTEMA CUANDO YA ENTRASTE ---
-    st.markdown(f'<div class="main-logo"><img src="{logo_url}" width="120"></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="main-logo"><img src="{logo_url}" width="100"></div>', unsafe_allow_html=True)
     
-    with st.sidebar:
-        if st.button("🚪 Cerrar Sesión"):
-            st.session_state["autenticado"] = False
-            st.rerun()
-
-    # Lógica de la Tasa
-    try:
-        res_tasa = supabase.table("ajustes").select("valor").eq("id", 1).execute()
-        tasa_v = float(res_tasa.data[0]['valor']) if res_tasa.data else 40.0
-    except:
-        tasa_v = 40.0
+    # 4. LÓGICA DE TASA
+    res_tasa = supabase.table("ajustes").select("valor").eq("id", 1).execute()
+    tasa_v = float(res_tasa.data[0]['valor']) if res_tasa.data else 40.0
 
     pestanas = st.tabs(["💰 TASA", "📦 INVENTARIO", "👥 USUARIOS"])
 
     with pestanas[0]:
         st.metric("Tasa Actual", f"Bs. {tasa_v:,.2f}")
-        nueva_tasa = st.number_input("Cambiar Tasa", value=tasa_v, step=0.01)
-        if st.button("✅ ACTUALIZAR TASA"):
+        nueva_tasa = st.number_input("Nueva Tasa", value=tasa_v)
+        if st.button("💾 ACTUALIZAR TASA"):
             supabase.table("ajustes").update({"valor": str(nueva_tasa)}).eq("id", 1).execute()
-            st.success("Tasa guardada en la nube.")
+            st.success("Tasa guardada")
             st.rerun()
 
     with pestanas[1]:
-        busq = st.text_input("🔍 Buscar...").upper()
-        res_p = supabase.table("productos").select("nombre, venta_usd, venta_bs").execute()
+        # --- BUSCADOR Y TABLA ---
+        busq = st.text_input("🔍 Buscar para editar...").upper()
+        res_p = supabase.table("productos").select("*").execute()
         df = pd.DataFrame(res_p.data)
+        
         if not df.empty:
-            df.columns = ["PRODUCTO", "USD $", "BS. TASA"]
             if busq:
-                df = df[df['PRODUCTO'].str.contains(busq, na=False)]
-            st.dataframe(df, use_container_width=True, hide_index=True)
+                df = df[df['nombre'].str.contains(busq, na=False)]
+            st.dataframe(df[["nombre", "venta_usd", "venta_bs"]], use_container_width=True, hide_index=True)
+
+            st.divider()
+            
+            # --- FORMULARIO DE GESTIÓN ---
+            st.subheader("🛠️ Editar / Agregar")
+            # Seleccionar producto de la lista para editar
+            opciones = ["-- NUEVO PRODUCTO --"] + sorted(df['nombre'].tolist())
+            seleccion = st.selectbox("Selecciona un producto", opciones)
+
+            with st.form("gestion_inv"):
+                nombre_p = st.text_input("Nombre del Producto", value="" if seleccion == "-- NUEVO PRODUCTO --" else seleccion)
+                precio_u = st.number_input("Precio USD", format="%.2f", value=0.0 if seleccion == "-- NUEVO PRODUCTO --" else float(df[df['nombre']==seleccion]['venta_usd'].values[0]))
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    save_btn = st.form_submit_button("💾 GUARDAR/SUBIR")
+                with col2:
+                    del_btn = st.form_submit_button("🗑️ ELIMINAR")
+
+                if save_btn:
+                    p_bs = precio_u * tasa_v
+                    if seleccion == "-- NUEVO PRODUCTO --":
+                        supabase.table("productos").insert({"nombre": nombre_p.upper(), "venta_usd": precio_u, "venta_bs": p_bs}).execute()
+                        st.success("Añadido")
+                    else:
+                        supabase.table("productos").update({"nombre": nombre_p.upper(), "venta_usd": precio_u, "venta_bs": p_bs}).eq("nombre", seleccion).execute()
+                        st.success("Actualizado")
+                    st.rerun()
+
+                if del_btn and seleccion != "-- NUEVO PRODUCTO --":
+                    supabase.table("productos").delete().eq("nombre", seleccion).execute()
+                    st.warning(f"Eliminado: {seleccion}")
+                    st.rerun()
 
     with pestanas[2]:
-        st.subheader("Usuarios Registrados")
-        # Mostrar la lista actual de tu captura
-        res_u = supabase.table("usuarios").select("usuario, rol").execute()
-        st.table(pd.DataFrame(res_u.data))
+        st.write("Panel de Usuarios Activo")
+        if st.sidebar.button("Cerrar Sesión"):
+            st.session_state["autenticado"] = False
+            st.rerun()
