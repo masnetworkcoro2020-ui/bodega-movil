@@ -11,7 +11,7 @@ KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF6
 supabase = create_client(URL, KEY)
 
 # 3. MARCA DE AGUA (TU LOGO AL FONDO)
-logo_url = "LINK_DE_TU_IMAGEN_AQUI" 
+logo_url = "LINK_DE_TU_LOGO_AQUI" 
 
 st.markdown(f"""
     <style>
@@ -23,7 +23,7 @@ st.markdown(f"""
         background-position: center 120px;
         background-size: 250px;
     }}
-    .stButton>button {{ width: 100%; border-radius: 15px; font-weight: bold; height: 3.5em; }}
+    .stButton>button {{ width: 100%; border-radius: 15px; font-weight: bold; height: 3.5em; background-color: #1f538d; color: white; }}
     [data-testid="stMetricValue"] {{ font-size: 1.8rem; color: #1f538d; }}
     </style>
     """, unsafe_allow_html=True)
@@ -52,37 +52,16 @@ with pestanas[0]:
 # --- SECCIÓN INVENTARIO ---
 with pestanas[1]:
     st.subheader("Gestión de Inventario")
-    modo = st.segmented_control("Acción", ["Listado", "Nuevo"], default="Listado")
+    busq = st.text_input("🔍 Buscar por nombre...").upper()
+    res_p = supabase.table("productos").select("nombre, venta_usd, venta_bs").execute()
+    df = pd.DataFrame(res_p.data)
     
-    if modo == "Listado":
-        # Búsqueda automática en Mayúsculas
-        busq = st.text_input("🔍 Buscar por nombre...").upper()
-        res_p = supabase.table("productos").select("nombre, venta_usd, venta_bs").execute()
-        df = pd.DataFrame(res_p.data)
-        
-        if not df.empty:
-            if busq:
-                df = df[df['nombre'].str.contains(busq, na=False)]
-            st.dataframe(df, use_container_width=True, hide_index=True)
-        else:
-            st.warning("No hay productos registrados.")
-            
+    if not df.empty:
+        if busq:
+            df = df[df['nombre'].str.contains(busq, na=False)]
+        st.dataframe(df, use_container_width=True, hide_index=True)
     else:
-        with st.form("nuevo_p"):
-            n_prod = st.text_input("Nombre del Producto (MAYÚSCULAS)").upper()
-            p_usd = st.number_input("Precio $", min_value=0.0, step=0.1)
-            # Cálculo de Bs automático
-            p_bs = p_usd * tasa_v
-            st.info(f"Precio en Bolívares: Bs. {p_bs:,.2f}")
-            
-            if st.form_submit_button("➕ GUARDAR PRODUCTO"):
-                if n_prod:
-                    supabase.table("productos").insert({
-                        "nombre": n_prod, "venta_usd": p_usd, "venta_bs": p_bs
-                    }).execute()
-                    st.success("¡Producto agregado!")
-                else:
-                    st.error("El nombre es obligatorio")
+        st.warning("No hay productos registrados.")
 
 # --- SECCIÓN USUARIOS ---
 with pestanas[2]:
@@ -90,13 +69,9 @@ with pestanas[2]:
     with st.form("new_user"):
         u_name = st.text_input("Usuario (Login)").lower().strip()
         u_pass = st.text_input("Contraseña", type="password")
-        u_rol = st.selectbox("Nivel", ["Administrador", "Operador"])
-        
         if st.form_submit_button("👤 CREAR USUARIO"):
             if u_name and u_pass:
-                supabase.table("usuarios").insert({
-                    "usuario": u_name, "clave": u_pass, "rol": u_rol
-                }).execute()
+                supabase.table("usuarios").insert({"usuario": u_name, "clave": u_pass, "rol": "Operador"}).execute()
                 st.success(f"Usuario {u_name} registrado")
             else:
                 st.warning("Faltan datos")
