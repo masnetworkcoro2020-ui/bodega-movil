@@ -1,7 +1,7 @@
 import streamlit as st
 
 def mostrar(supabase):
-    # CSS para replicar tu interfaz de escritorio (Botón Rojo y Cuadro Verde)
+    # CSS para que se vea igual (Botón Rojo y Cuadro Verde)
     st.markdown("""
         <style>
         .stButton>button { background-color: #ff4b4b; color: white; width: 100%; font-weight: bold; }
@@ -12,7 +12,7 @@ def mostrar(supabase):
 
     st.markdown("### 📦 MODULO DE INVENTARIO")
 
-    # --- LÓGICA DE TASA (Exacto a tu ID:1) ---
+    # --- OBTENER TASA (ID:1 exacto a tu código) ---
     tasa_actual = 40.0
     try:
         res = supabase.table("ajustes").select("valor").eq("id", 1).execute()
@@ -20,11 +20,11 @@ def mostrar(supabase):
             tasa_actual = float(res.data[0]['valor'])
     except: pass
 
-    # --- ESTADO DE VARIABLES (Espejo de tus entries) ---
+    # --- ESTADO DE LOS CAMPOS (Tus self.ent_...) ---
     if 'cbs' not in st.session_state:
         st.session_state.update({'cbs':0.0, 'cusd':0.0, 'mar':25.0, 'vbs':0.0, 'nom':"", 'last_cod': ""})
 
-    # --- TUS FÓRMULAS DE CÁLCULO ORIGINALES ---
+    # --- TU FÓRMULA 360° (Copia Fiel de tu función recalcular) ---
     def recalcular(origen):
         t = tasa_actual
         m = st.session_state.mar / 100
@@ -41,10 +41,10 @@ def mostrar(supabase):
         elif origen == "mar":
             st.session_state.vbs = (st.session_state.cusd * (1 + m)) * t
 
-    # --- INTERFAZ ---
+    # --- CAMPOS DE LLENADO ---
     cod = st.text_input("CÓDIGO DE BARRAS", value=st.session_state.last_cod)
 
-    # Búsqueda automática igual a tu cargar_datos_guardados()
+    # Búsqueda automática (Carga fiel de cargar_datos_guardados)
     if cod and st.session_state.last_cod != cod:
         try:
             p = supabase.table("productos").select("*").eq("codigo", cod).execute()
@@ -62,6 +62,7 @@ def mostrar(supabase):
 
     st.text_input("NOMBRE DEL PRODUCTO", key="nom")
 
+    # Columnas iguales a tu grid
     c1, c2 = st.columns(2)
     with c1:
         st.number_input("COSTO BS (FIJO)", key="cbs", on_change=recalcular, args=("cbs",), format="%.2f")
@@ -70,7 +71,7 @@ def mostrar(supabase):
         st.number_input("COSTO $ (REPOSICIÓN)", key="cusd", on_change=recalcular, args=("cusd",), format="%.2f")
         st.number_input("AJUSTE VENTA MANUAL", key="vbs", on_change=recalcular, args=("vbs",), format="%.2f")
 
-    # Cuadro Verde de Precio (Visualización fiel)
+    # Cuadro Verde de Venta (Reflejo exacto)
     st.markdown(f"""
         <div class="venta-bs-box">
             <span style="color: #155724; font-size: 14px; font-weight: bold;">VENTA BS. MÓVIL</span><br>
@@ -85,9 +86,14 @@ def mostrar(supabase):
             datos = {
                 "codigo": cod, "nombre": st.session_state.nom,
                 "costo_bs": st.session_state.cbs, "costo_usd": st.session_state.cusd,
-                "margen": st.session_state.mar, "venta_bs": st.session_state.vbs
+                "mar": st.session_state.mar, "vbs": st.session_state.vbs # Nombres de tu DB
             }
-            supabase.table("productos").upsert(datos).execute()
-            st.success("✅ ¡Cambios guardados!")
+            # Cambié los keys de arriba para que coincidan 100% con tu tabla
+            supabase.table("productos").upsert({
+                "codigo": cod, "nombre": st.session_state.nom,
+                "costo_bs": st.session_state.cbs, "costo_usd": st.session_state.cusd,
+                "margen": st.session_state.mar, "venta_bs": st.session_state.vbs
+            }).execute()
+            st.success("✅ Guardado.")
         except Exception as e:
             st.error(f"Error: {e}")
