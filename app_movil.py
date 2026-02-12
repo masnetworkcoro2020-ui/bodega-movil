@@ -2,13 +2,20 @@ import streamlit as st
 from supabase import create_client
 import pandas as pd
 from PIL import Image
+import numpy as np
 
-# 1. CONEXIÓN (Tus credenciales blindadas)
+# Intentamos importar pyzbar para el escáner (mecanismo que usas en escritorio)
+try:
+    from pyzbar import pyzbar
+except ImportError:
+    pyzbar = None
+
+# 1. CONEXIÓN (Credenciales originales)
 URL = "https://aznkqqrakzhvbtlnjaxz.supabase.co"
 KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF6bmtxcXJha3podmJ0bG5qYXh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5NjY4NTAsImV4cCI6MjA4NTU0Mjg1MH0.4LRC-DsHidHkYyS4CiLUy51r-_lEgGPMvKL7_DnJWFI"
 supabase = create_client(URL, KEY)
 
-# 2. CONFIGURACIÓN Y ESTILOS (Formato teléfono robusto)
+# 2. CONFIGURACIÓN Y ESTILOS (Tus colores exactos)
 st.set_page_config(page_title="BODEGA MOVIL 360", layout="centered")
 st.markdown("""
     <style>
@@ -22,7 +29,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. SISTEMA DE LOGIN (CANDADO) ---
+# --- 3. SISTEMA DE LOGIN (EL CANDADO) ---
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 
@@ -31,49 +38,56 @@ if not st.session_state.autenticado:
     u_acc = st.text_input("Usuario:")
     p_acc = st.text_input("Contraseña:", type="password")
     if st.button("ENTRAR AL SISTEMA"):
-        # Verificación directa en Supabase
         res_auth = supabase.table("usuarios").select("*").eq("usuario", u_acc).eq("clave", p_acc).execute()
         if res_auth.data:
             st.session_state.autenticado = True
             st.rerun()
         else:
-            st.error("Usuario o Clave incorrectos, mano.")
-    st.stop() # No deja pasar nada de lo que sigue si no hay login
+            st.error("Credenciales incorrectas, mano.")
+    st.stop()
 
-# --- 4. SI PASA EL LOGIN, CARGA TODO EL SISTEMA ---
+# --- 4. MOTOR DE INVENTARIO (LÓGICA DE 195 LÍNEAS) ---
 
 # OBTENCIÓN DE TASA (ID:1)
 try:
     res_t = supabase.table("ajustes").select("valor").eq("id", 1).execute()
     tasa_v = float(res_t.data[0]['valor']) if res_t.data else 40.0
 except Exception as e:
-    st.error(f"Error de conexión con la tasa: {e}")
+    st.error(f"Error de conexión: {e}")
     tasa_v = 40.0
 
-# Botón para cerrar sesión en el menú lateral
 if st.sidebar.button("Cerrar Sesión"):
     st.session_state.autenticado = False
     st.rerun()
 
-# PESTAÑAS PRINCIPALES
 tab1, tab2, tab3 = st.tabs(["💰 TASA", "📦 INVENTARIO", "👥 USUARIOS"])
 
 # --- PESTAÑA 1: TASA ---
 with tab1:
     st.subheader("Ajuste de Tasa Diaria")
-    st.info(f"Tasa actual en sistema: {tasa_v} Bs/$")
+    st.info(f"Tasa actual: {tasa_v} Bs/$")
     nt = st.number_input("Nueva Tasa:", value=tasa_v, format="%.2f")
     if st.button("💾 ACTUALIZAR TASA GLOBAL"):
         supabase.table("ajustes").update({"valor": nt}).eq("id", 1).execute()
-        st.success("Tasa actualizada correctamente en la nube.")
+        st.success("Tasa actualizada.")
         st.rerun()
 
-# --- PESTAÑA 2: INVENTARIO (MOTOR 360 COMPLETO) ---
+# --- PESTAÑA 2: INVENTARIO (EL MOTOR FUERTE) ---
 with tab2:
     if "f" not in st.session_state:
         st.session_state.f = {"cbs": 0.0, "cusd": 0.0, "mar": 25.0, "vbs": 0.0, "vusd": 0.0, "cod": "", "nom": ""}
     
-    st.camera_input("📷 REGISTRO FOTOGRÁFICO")
+    # ESCANEO AUTOMÁTICO (PROCESANDO FOTO)
+    foto_captura = st.camera_input("📷 ESCANEAR CÓDIGO (APUNTE Y DISPARE)")
+    if foto_captura and pyzbar:
+        img_pil = Image.open(foto_captura)
+        decoded_objs = pyzbar.decode(np.array(img_pil))
+        if decoded_objs:
+            codigo_leido = decoded_objs[0].data.decode('utf-8')
+            if codigo_leido != st.session_state.f["cod"]:
+                st.session_state.f["cod"] = codigo_leido
+                st.success(f"¡Leído!: {codigo_leido}")
+                st.rerun()
 
     # BUSCADOR DINÁMICO
     res_p = supabase.table("productos").select("*").order("nombre").execute()
@@ -81,7 +95,6 @@ with tab2:
     opciones = ["-- NUEVO PRODUCTO --"] + sorted(df_lista['nombre'].tolist() if not df_lista.empty else [])
     seleccion = st.selectbox("🔍 Buscar producto para editar:", opciones)
 
-    # Carga de datos al seleccionar
     if seleccion != "-- NUEVO PRODUCTO --" and seleccion != st.session_state.get("last_sel"):
         p = df_lista[df_lista['nombre'] == seleccion].iloc[0]
         st.session_state.f = {
@@ -94,7 +107,7 @@ with tab2:
         st.session_state.f = {"cbs": 0.0, "cusd": 0.0, "mar": 25.0, "vbs": 0.0, "vusd": 0.0, "cod": "", "nom": ""}
         st.session_state.last_sel = "-- NUEVO PRODUCTO --"
 
-    # CAMPOS DE DATOS
+    # CAMPOS DE DATOS (Nombres originales de tu inventario.py)
     cod_in = st.text_input("Código de Barras:", value=st.session_state.f["cod"])
     nom_in = st.text_input("Nombre del Producto:", value=st.session_state.f["nom"])
     
@@ -108,55 +121,32 @@ with tab2:
     in_vusd = col_v1.number_input("Venta $", value=st.session_state.f["vusd"], format="%.2f")
     in_vbs = col_v2.number_input("Venta Bs.", value=st.session_state.f["vbs"], format="%.2f")
 
-    # --- MOTOR 360° TOTAL (SIN RECORTES) ---
+    # --- MOTOR 360° COMPLETO ---
     factor = (1 + (in_mar / 100))
-
     # A. Costo Bs -> Adelante
     if in_cbs != st.session_state.f["cbs"]:
-        st.session_state.f["cbs"] = in_cbs
-        st.session_state.f["cusd"] = in_cbs / tasa_v
-        st.session_state.f["vusd"] = st.session_state.f["cusd"] * factor
-        st.session_state.f["vbs"] = st.session_state.f["vusd"] * tasa_v
+        st.session_state.f.update({"cbs": in_cbs, "cusd": in_cbs/tasa_v, "vusd": (in_cbs/tasa_v)*factor, "vbs": (in_cbs/tasa_v)*factor*tasa_v})
         st.rerun()
-
     # B. Costo $ -> Adelante
     elif in_cusd != st.session_state.f["cusd"]:
-        st.session_state.f["cusd"] = in_cusd
-        st.session_state.f["cbs"] = in_cusd * tasa_v
-        st.session_state.f["vusd"] = in_cusd * factor
-        st.session_state.f["vbs"] = st.session_state.f["vusd"] * tasa_v
+        st.session_state.f.update({"cusd": in_cusd, "cbs": in_cusd*tasa_v, "vusd": in_cusd*factor, "vbs": in_cusd*factor*tasa_v})
         st.rerun()
-
     # C. Margen -> Adelante
     elif in_mar != st.session_state.f["mar"]:
-        st.session_state.f["mar"] = in_mar
-        st.session_state.f["vusd"] = st.session_state.f["cusd"] * factor
-        st.session_state.f["vbs"] = st.session_state.f["vusd"] * tasa_v
+        st.session_state.f.update({"mar": in_mar, "vusd": st.session_state.f["cusd"]*factor, "vbs": st.session_state.f["cusd"]*factor*tasa_v})
         st.rerun()
-
     # D. Venta Bs -> Atrás
     elif in_vbs != st.session_state.f["vbs"]:
-        st.session_state.f["vbs"] = in_vbs
-        st.session_state.f["vusd"] = in_vbs / tasa_v
-        st.session_state.f["cusd"] = (in_vbs / tasa_v) / factor
-        st.session_state.f["cbs"] = st.session_state.f["cusd"] * tasa_v
+        st.session_state.f.update({"vbs": in_vbs, "vusd": in_vbs/tasa_v, "cusd": (in_vbs/tasa_v)/factor, "cbs": ((in_vbs/tasa_v)/factor)*tasa_v})
         st.rerun()
-
     # E. Venta $ -> Atrás
     elif in_vusd != st.session_state.f["vusd"]:
-        st.session_state.f["vusd"] = in_vusd
-        st.session_state.f["vbs"] = in_vusd * tasa_v
-        st.session_state.f["cusd"] = in_vusd / factor
-        st.session_state.f["cbs"] = st.session_state.f["cusd"] * tasa_v
+        st.session_state.f.update({"vusd": in_vusd, "vbs": in_vusd*tasa_v, "cusd": in_vusd/factor, "cbs": (in_vusd/factor)*tasa_v})
         st.rerun()
 
     # ACCIONES
     if st.button("💾 GUARDAR / ACTUALIZAR EN NUBE"):
-        datos = {
-            "codigo": cod_in.upper(), "nombre": nom_in.upper(),
-            "costo_bs": st.session_state.f["cbs"], "costo_usd": st.session_state.f["cusd"],
-            "margen": st.session_state.f["mar"], "venta_usd": st.session_state.f["vusd"], "venta_bs": st.session_state.f["vbs"]
-        }
+        datos = {"codigo": cod_in.upper(), "nombre": nom_in.upper(), "costo_bs": st.session_state.f["cbs"], "costo_usd": st.session_state.f["cusd"], "margen": st.session_state.f["mar"], "venta_usd": st.session_state.f["vusd"], "venta_bs": st.session_state.f["vbs"]}
         supabase.table("productos").upsert(datos).execute()
         st.success("¡Producto guardado exitosamente!")
         st.rerun()
@@ -164,12 +154,9 @@ with tab2:
     if st.button("🗑️ ELIMINAR PRODUCTO", type="secondary"):
         if nom_in:
             supabase.table("productos").delete().eq("nombre", nom_in).execute()
-            st.warning("Producto eliminado de la base de datos.")
             st.rerun()
 
-    # TABLA DE CONSULTA
     st.divider()
-    st.subheader("📋 Inventario Registrado")
     if not df_lista.empty:
         st.dataframe(df_lista[["nombre", "venta_bs", "costo_usd", "margen"]], use_container_width=True, hide_index=True)
 
@@ -184,7 +171,6 @@ with tab3:
                 supabase.table("usuarios").insert({"usuario": u_nom, "clave": u_cla, "rol": "Vendedor"}).execute()
                 st.success(f"Usuario {u_nom} creado.")
                 st.rerun()
-
     st.divider()
     res_u = supabase.table("usuarios").select("*").execute()
     if res_u.data:
