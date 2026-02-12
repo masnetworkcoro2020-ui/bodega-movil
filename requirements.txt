@@ -1,7 +1,0 @@
-streamlit
-supabase
-pandas
-pillow
-numpy
-pyzbar
-opencv-python-headless
