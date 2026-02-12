@@ -29,14 +29,20 @@ st.markdown("""
     div[data-testid="stNumberInput"]:has(label:contains("Costo $")) input { background-color: #ebedef !important; color: black; }
     div[data-testid="stNumberInput"]:has(label:contains("Venta Bs.")) input { background-color: #d4efdf !important; color: black; font-weight: bold; }
     .stButton>button { width: 100%; height: 60px !important; border-radius: 12px; font-weight: bold; font-size: 18px !important; }
-    div[data-testid="stTextInput"]:has(label:contains("Código:")) input { border: 3px solid #E74C3C !important; font-size: 22px !important; color: #922B21 !important; }
+    /* ESTILO PARA EL SITIAL DE HONOR (CÓDIGO) */
+    div[data-testid="stTextInput"]:has(label:contains("Código:")) input { border: 3px solid #E74C3C !important; font-size: 22px !important; color: #922B21 !important; background-color: #FDEDEC !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. LOGIN ---
+# --- 3. INICIALIZACIÓN DE ESTADOS (EL CEREBRO) ---
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
+if "f" not in st.session_state:
+    st.session_state.f = {"cbs": 0.0, "cusd": 0.0, "mar": 25.0, "vbs": 0.0, "vusd": 0.0, "cod": "", "nom": ""}
+if "cambio_ticket" not in st.session_state:
+    st.session_state.cambio_ticket = 0  # Este es el truco para refrescar casillas
 
+# --- LOGIN ---
 if not st.session_state.autenticado:
     st.title("🔐 ACCESO BODEGA 360")
     u = st.text_input("Usuario")
@@ -48,20 +54,16 @@ if not st.session_state.autenticado:
             st.rerun()
     st.stop()
 
-# --- 4. MOTOR 360 ---
+# TASA
 try:
     res_t = supabase.table("ajustes").select("valor").eq("id", 1).execute()
     tasa_v = float(res_t.data[0]['valor']) if res_t.data else 40.0
 except: tasa_v = 40.0
 
-# INICIALIZACIÓN DE VARIABLES
-if "f" not in st.session_state:
-    st.session_state.f = {"cbs": 0.0, "cusd": 0.0, "mar": 25.0, "vbs": 0.0, "vusd": 0.0, "cod": "", "nom": ""}
-
 tab1, tab2, tab3 = st.tabs(["💰 TASA", "📦 INVENTARIO", "👥 USUARIOS"])
 
 with tab2:
-    # ESCÁNER (CON CORRECCIÓN DE CERO AUTOMÁTICA)
+    # ESCÁNER (CON CORRECCIÓN DE CERO Y REFRESCO FORZADO)
     foto = st.camera_input("📷 ESCANEAR CÓDIGO")
     
     if foto:
@@ -77,16 +79,14 @@ with tab2:
             if decoded:
                 raw_code = str(decoded[0].data.decode('utf-8')).strip()
                 
-                # REGLA DE ORO: Si empieza por 0 y es largo, quitamos el 0 (Problema UPC-A)
-                if raw_code.startswith('0') and len(raw_code) > 1:
-                    codigo_final = raw_code[1:]
-                else:
-                    codigo_final = raw_code
+                # REGLA PARA QUITAR EL CERO UPC-A
+                codigo_final = raw_code[1:] if raw_code.startswith('0') and len(raw_code) > 1 else raw_code
                 
-                # Guardamos en memoria
+                # GUARDAR EN MEMORIA
                 st.session_state.f["cod"] = codigo_final
+                st.session_state.cambio_ticket += 1 # CAMBIAMOS LA LLAVE
                 
-                # Buscamos en la nube
+                # BUSCAR PRODUCTO
                 res_b = supabase.table("productos").select("*").eq("codigo", codigo_final).execute()
                 if res_b.data:
                     p = res_b.data[0]
@@ -95,11 +95,9 @@ with tab2:
                         "mar": float(p['margen']), "vbs": float(p['venta_bs']), "vusd": float(p['venta_usd'])
                     })
                 else:
-                    # Si el producto es nuevo, limpiamos los campos pero dejamos el código
                     st.session_state.f.update({"nom": "", "cbs": 0.0, "cusd": 0.0, "vbs": 0.0, "vusd": 0.0})
                 
-                st.success(f"✅ Código: {codigo_final}")
-                st.rerun() # Para que baje a la casilla de inmediato
+                st.rerun() 
 
     # BUSCADOR
     res_p = supabase.table("productos").select("*").order("nombre").execute()
@@ -111,46 +109,47 @@ with tab2:
         p = df_lista[df_lista['nombre'] == sel].iloc[0]
         st.session_state.f.update({"cbs": float(p['costo_bs']), "cusd": float(p['costo_usd']), "mar": float(p['margen']), "vbs": float(p['venta_bs']), "vusd": float(p['venta_usd']), "cod": str(p['codigo']), "nom": str(p['nombre'])})
         st.session_state.last_s = sel
+        st.session_state.cambio_ticket += 1
+        st.rerun()
 
-    # --- FORMULARIO CONECTADO ---
-    # Usamos st.session_state.f["cod"] para el valor por defecto
-    cod_in = st.text_input("Código:", value=st.session_state.f["cod"])
-    nom_in = st.text_input("Producto:", value=st.session_state.f["nom"])
+    # --- FORMULARIO (EL SITIAL DE HONOR) ---
+    # Usamos el ticket en el key para que se actualice sí o sí
+    cod_in = st.text_input("Código:", value=st.session_state.f["cod"], key=f"cod_{st.session_state.cambio_ticket}")
+    nom_in = st.text_input("Producto:", value=st.session_state.f["nom"], key=f"nom_{st.session_state.cambio_ticket}")
     
     c1, c2 = st.columns(2)
-    in_cbs = c1.number_input("Costo Bs.", value=st.session_state.f["cbs"], format="%.2f")
-    in_cusd = c2.number_input("Costo $", value=st.session_state.f["cusd"], format="%.2f")
-    in_mar = st.number_input("Margen %", value=st.session_state.f["mar"], format="%.1f")
+    in_cbs = c1.number_input("Costo Bs.", value=st.session_state.f["cbs"], format="%.2f", key=f"cbs_{st.session_state.cambio_ticket}")
+    in_cusd = c2.number_input("Costo $", value=st.session_state.f["cusd"], format="%.2f", key=f"cusd_{st.session_state.cambio_ticket}")
+    in_mar = st.number_input("Margen %", value=st.session_state.f["mar"], format="%.1f", key=f"mar_{st.session_state.cambio_ticket}")
     
     c3, c4 = st.columns(2)
-    in_vusd = c3.number_input("Venta $", value=st.session_state.f["vusd"], format="%.2f")
-    in_vbs = c4.number_input("Venta Bs.", value=st.session_state.f["vbs"], format="%.2f")
+    in_vusd = c3.number_input("Venta $", value=st.session_state.f["vusd"], format="%.2f", key=f"vusd_{st.session_state.cambio_ticket}")
+    in_vbs = c4.number_input("Venta Bs.", value=st.session_state.f["vbs"], format="%.2f", key=f"vbs_{st.session_state.cambio_ticket}")
 
-    # MOTOR 360 (Igual a inventario.py)
+    # MOTOR 360
     factor = (1 + (in_mar / 100))
     if in_cbs != st.session_state.f["cbs"]:
         st.session_state.f.update({"cbs": in_cbs, "cusd": in_cbs/tasa_v, "vusd": (in_cbs/tasa_v)*factor, "vbs": (in_cbs/tasa_v)*factor*tasa_v})
+        st.session_state.cambio_ticket += 1
         st.rerun()
     elif in_cusd != st.session_state.f["cusd"]:
         st.session_state.f.update({"cusd": in_cusd, "cbs": in_cusd*tasa_v, "vusd": in_cusd*factor, "vbs": in_cusd*factor*tasa_v})
-        st.rerun()
-    elif in_vbs != st.session_state.f["vbs"]:
-        st.session_state.f.update({"vbs": in_vbs, "vusd": in_vbs/tasa_v, "cusd": (in_vbs/tasa_v)/factor, "cbs": ((in_vbs/tasa_v)/factor)*tasa_v})
+        st.session_state.cambio_ticket += 1
         st.rerun()
 
-    if st.button("💾 GUARDAR"):
-        # Importante: Guardamos lo que está escrito en el campo de texto (cod_in)
+    if st.button("💾 GUARDAR PRODUCTO"):
         d = {"codigo": cod_in, "nombre": nom_in.upper(), "costo_bs": in_cbs, "costo_usd": in_cusd, "margen": in_mar, "venta_usd": in_vusd, "venta_bs": in_vbs}
         supabase.table("productos").upsert(d).execute()
-        st.success("¡Guardado!")
+        st.success("¡Sincronizado!")
         st.rerun()
 
     if st.button("✨ LIMPIAR"):
         st.session_state.f = {"cbs": 0.0, "cusd": 0.0, "mar": 25.0, "vbs": 0.0, "vusd": 0.0, "cod": "", "nom": ""}
+        st.session_state.cambio_ticket += 1
         st.rerun()
 
 with tab1:
-    nt = st.number_input("Tasa Diaria:", value=tasa_v)
+    nt = st.number_input("Tasa:", value=tasa_v)
     if st.button("ACTUALIZAR TASA"):
         supabase.table("ajustes").update({"valor": nt}).eq("id", 1).execute()
         st.rerun()
