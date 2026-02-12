@@ -2,95 +2,102 @@ import streamlit as st
 from supabase import create_client
 import pandas as pd
 
-# 1. CONEXIÓN (Tus credenciales blindadas)
+# 1. CONEXIÓN (Blindada)
 URL = "https://aznkqqrakzhvbtlnjaxz.supabase.co"
 KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF6bmtxcXJha3podmJ0bG5qYXh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5NjY4NTAsImV4cCI6MjA4NTU0Mjg1MH0.4LRC-DsHidHkYyS4CiLUy51r-_lEgGPMvKL7_DnJWFI"
 supabase = create_client(URL, KEY)
 
-# 2. ESTILOS (Colores originales de tu PC)
+# 2. ESTILOS DE TU PC (Amarillo Costo, Verde Venta)
 st.markdown("""
     <style>
-    div[data-testid="stNumberInput"]:has(label:contains("Costo Bs.")) input { background-color: #fcf3cf !important; color: black !important; }
-    div[data-testid="stNumberInput"]:has(label:contains("Costo $")) input { background-color: #ebedef !important; color: black !important; }
-    div[data-testid="stNumberInput"]:has(label:contains("Venta Bs.")) input { background-color: #d4efdf !important; color: black !important; font-weight: bold !important; }
-    .stButton>button { border-radius: 12px; font-weight: bold; height: 3.5em; }
+    div[data-testid="stNumberInput"]:has(label:contains("Costo Bs.")) input { background-color: #fcf3cf !important; }
+    div[data-testid="stNumberInput"]:has(label:contains("Costo $")) input { background-color: #ebedef !important; }
+    div[data-testid="stNumberInput"]:has(label:contains("Venta Bs.")) input { background-color: #d4efdf !important; font-weight: bold !important; }
+    div[data-testid="stNumberInput"]:has(label:contains("Venta $")) input { background-color: #d6eaf8 !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- OBTENER TASA ---
+# 3. TASA (ID:1)
 res_tasa = supabase.table("ajustes").select("valor").eq("id", 1).execute()
 tasa_v = float(res_tasa.data[0]['valor']) if res_tasa.data else 40.0
 
-# --- PESTAÑA INVENTARIO ---
-tab_tasa, tab_inv, tab_usu = st.tabs(["💰 TASA", "📦 INVENTARIO", "👥 USUARIOS"])
-
-with tab_inv:
-    st.subheader("🔄 Gestión Reactiva 360°")
+with st.container():
+    st.subheader("🛠️ Calculadora 360° Pro")
     
-    # Session State para que los campos "reaccionen" entre ellos
-    if "f_data" not in st.session_state:
-        st.session_state.f_data = {"cbs": 0.0, "cusd": 0.0, "mar": 25.0, "vbs": 0.0, "vusd": 0.0}
+    # Session State para manejar la reactividad circular
+    if "val" not in st.session_state:
+        st.session_state.val = {"cbs": 0.0, "cusd": 0.0, "mar": 25.0, "vbs": 0.0, "vusd": 0.0}
 
-    st.camera_input("📷 ESCANEAR")
+    # FILA 1: IDENTIFICACIÓN
+    col_id1, col_id2 = st.columns([1, 2])
+    cod = col_id1.text_input("Código")
+    nom = col_id2.text_input("Producto")
+
+    # FILA 2: COSTOS
+    c1, c2 = st.columns(2)
+    in_cbs = c1.number_input("Costo Bs. (Fijo)", value=st.session_state.val["cbs"], format="%.2f")
+    in_cusd = c2.number_input("Costo $", value=st.session_state.val["cusd"], format="%.2f")
+
+    # FILA 3: MARGEN Y VENTAS
+    m1, m2, m3 = st.columns([1, 1.5, 1.5])
+    in_mar = m1.number_input("Margen %", value=st.session_state.val["mar"], format="%.1f")
+    in_vusd = m2.number_input("Venta $", value=st.session_state.val["vusd"], format="%.2f")
+    in_vbs = m3.number_input("Venta Bs. (Móvil)", value=st.session_state.val["vbs"], format="%.2f")
+
+    # --- MOTOR DE RECALCULO 360° (LÓGICA DEL ORIGINAL) ---
     
-    with st.container():
-        cod = st.text_input("Código")
-        nom = st.text_input("Producto")
-        
-        # FILA 1: COSTOS (Ambos manuales)
-        col1, col2 = st.columns(2)
-        n_cbs = col1.number_input("Costo Bs. (Fijo)", value=st.session_state.f_data["cbs"], format="%.2f")
-        n_cusd = col2.number_input("Costo $", value=st.session_state.f_data["cusd"], format="%.2f")
-        
-        # FILA 2: MARGEN Y VENTA
-        col3, col4 = st.columns(2)
-        n_mar = col3.number_input("Margen %", value=st.session_state.f_data["mar"], format="%.2f")
-        n_vbs = col4.number_input("Venta Bs. (Móvil)", value=st.session_state.f_data["vbs"], format="%.2f")
+    # 1. Si mueves Venta Bs (Hacia atrás)
+    if in_vbs != st.session_state.val["vbs"]:
+        st.session_state.val["vbs"] = in_vbs
+        st.session_state.val["vusd"] = in_vbs / tasa_v
+        if st.session_state.val["cusd"] > 0:
+            st.session_state.val["mar"] = ((st.session_state.val["vusd"] / st.session_state.val["cusd"]) - 1) * 100
+        st.rerun()
 
-        # --- LÓGICA DE RECALCULO 360° (Tu función recalcular()) ---
-        
-        # A. Si escribes en COSTO BS manual:
-        if n_cbs != st.session_state.f_data["cbs"]:
-            st.session_state.f_data["cbs"] = n_cbs
-            st.session_state.f_data["cusd"] = n_cbs / tasa_v
-            st.session_state.f_data["vusd"] = st.session_state.f_data["cusd"] * (1 + (st.session_state.f_data["mar"]/100))
-            st.session_state.f_data["vbs"] = st.session_state.f_data["vusd"] * tasa_v
-            st.rerun()
+    # 2. Si mueves Venta $ (Hacia atrás)
+    elif in_vusd != st.session_state.val["vusd"]:
+        st.session_state.val["vusd"] = in_vusd
+        st.session_state.val["vbs"] = in_vusd * tasa_v
+        if st.session_state.val["cusd"] > 0:
+            st.session_state.val["mar"] = ((in_vusd / st.session_state.val["cusd"]) - 1) * 100
+        st.rerun()
 
-        # B. Si escribes en COSTO $ manual:
-        elif n_cusd != st.session_state.f_data["cusd"]:
-            st.session_state.f_data["cusd"] = n_cusd
-            st.session_state.f_data["cbs"] = n_cusd * tasa_v
-            st.session_state.f_data["vusd"] = n_cusd * (1 + (st.session_state.f_data["mar"]/100))
-            st.session_state.f_data["vbs"] = st.session_state.f_data["vusd"] * tasa_v
-            st.rerun()
+    # 3. Si mueves Costo Bs (Hacia adelante)
+    elif in_cbs != st.session_state.val["cbs"]:
+        st.session_state.val["cbs"] = in_cbs
+        st.session_state.val["cusd"] = in_cbs / tasa_v
+        st.session_state.val["vusd"] = st.session_state.val["cusd"] * (1 + (st.session_state.val["mar"]/100))
+        st.session_state.val["vbs"] = st.session_state.val["vusd"] * tasa_v
+        st.rerun()
 
-        # C. Si escribes en VENTA BS manual:
-        elif n_vbs != st.session_state.f_data["vbs"]:
-            st.session_state.f_data["vbs"] = n_vbs
-            v_usd_act = n_vbs / tasa_v
-            if st.session_state.f_data["cusd"] > 0:
-                st.session_state.f_data["mar"] = ((v_usd_act / st.session_state.f_data["cusd"]) - 1) * 100
-            st.session_state.f_data["vusd"] = v_usd_act
-            st.rerun()
+    # 4. Si mueves Costo $ (Hacia adelante)
+    elif in_cusd != st.session_state.val["cusd"]:
+        st.session_state.val["cusd"] = in_cusd
+        st.session_state.val["cbs"] = in_cusd * tasa_v
+        st.session_state.val["vusd"] = in_cusd * (1 + (st.session_state.val["mar"]/100))
+        st.session_state.val["vbs"] = st.session_state.val["vusd"] * tasa_v
+        st.rerun()
 
-        st.info(f"📊 **Venta USD:** ${st.session_state.f_data['vusd']:.2f} | **Margen:** {st.session_state.f_data['mar']:.2f}%")
+    # 5. Si mueves el Margen
+    elif in_mar != st.session_state.val["mar"]:
+        st.session_state.val["mar"] = in_mar
+        st.session_state.val["vusd"] = st.session_state.val["cusd"] * (1 + (in_mar/100))
+        st.session_state.val["vbs"] = st.session_state.val["vusd"] * tasa_v
+        st.rerun()
 
-        if st.button("💾 GUARDAR PRODUCTO"):
-            datos = {
-                "codigo": cod.upper(), "nombre": nom.upper(),
-                "costo_bs": st.session_state.f_data["cbs"],
-                "costo_usd": st.session_state.f_data["cusd"],
-                "margen": round(st.session_state.f_data["mar"], 2),
-                "venta_usd": round(st.session_state.f_data["vusd"], 2),
-                "venta_bs": round(st.session_state.f_data["vbs"], 2)
-            }
-            supabase.table("productos").upsert(datos).execute()
-            st.success("¡Sincronizado!")
-            st.rerun()
+    # BOTÓN DE GUARDADO
+    if st.button("💾 REGISTRAR CAMBIOS 360°"):
+        datos = {
+            "codigo": cod.upper(), "nombre": nom.upper(),
+            "costo_bs": st.session_state.val["cbs"], "costo_usd": st.session_state.val["cusd"],
+            "margen": st.session_state.val["mar"], "venta_usd": st.session_state.val["vusd"], "venta_bs": st.session_state.val["vbs"]
+        }
+        supabase.table("productos").upsert(datos).execute()
+        st.success("¡Sincronizado!")
+        st.rerun()
 
-    st.divider()
-    # Lista de consulta abajo
-    res_p = supabase.table("productos").select("*").order("nombre").execute()
-    df = pd.DataFrame(res_p.data)
-    st.dataframe(df[["nombre", "costo_bs", "venta_bs"]], use_container_width=True, hide_index=True)
+st.divider()
+st.subheader("📋 Inventario Actual")
+res_p = supabase.table("productos").select("*").order("nombre").execute()
+df = pd.DataFrame(res_p.data)
+st.dataframe(df[["nombre", "costo_usd", "venta_usd", "venta_bs"]], use_container_width=True, hide_index=True)
