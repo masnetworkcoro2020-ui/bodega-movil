@@ -2,18 +2,18 @@ import streamlit as st
 import pandas as pd
 
 def mostrar(supabase):
-    # 1. Obtener Tasa (ID:1 como tu original)
+    # 1. Obtener Tasa (ID:1)
     tasa = 1.0
     try:
         res = supabase.table("ajustes").select("valor").eq("id", 1).execute()
         tasa = float(res.data[0]['valor']) if res.data else 40.0
     except: tasa = 40.0
 
-    # Inicializar el estado de las variables (Tu lógica de Binding)
+    # Inicializar estado
     if 'cbs' not in st.session_state:
-        st.session_state.update({'cbs':0.0, 'cusd':0.0, 'mar':25.0, 'vusd':0.0, 'vbs':0.0, 'nom':""})
+        st.session_state.update({'cbs':0.0, 'cusd':0.0, 'mar':25.0, 'vusd':0.0, 'vbs':0.0, 'nom':"", 'cod_leido': ""})
 
-    # LÓGICA DE RECÁLCULO (Tu función recalcular original)
+    # Lógica de Recálculo 360°
     def recalcular(origen):
         t = tasa
         m = st.session_state.mar / 100
@@ -33,11 +33,29 @@ def mostrar(supabase):
             st.session_state.cusd = st.session_state.vusd / (1 + m)
             st.session_state.cbs = st.session_state.cusd * t
 
-    # --- UI DEL MÓDULO ---
-    cod = st.text_input("Código:", key="ent_cod").strip()
+    # --- ESCÁNER AUTOMÁTICO ---
+    # Usamos st.camera_input para capturar. Al procesar la imagen detectamos el código.
+    with st.expander("📷 ABRIR ESCÁNER (AUTO-LECTURA)", expanded=False):
+        foto = st.camera_input("Enfoca el código de barras")
+        if foto:
+            # Nota: Streamlit procesa la imagen. Para que sea "automático" 
+            # el usuario solo tiene que apuntar y darle al botón de capturar.
+            import cv2
+            import numpy as np
+            from pyzbar import pyzbar
+            
+            file_bytes = np.asarray(bytearray(foto.read()), dtype=np.uint8)
+            img = cv2.imdecode(file_bytes, 1)
+            codigos = pyzbar.decode(img)
+            
+            for objeto in codigos:
+                st.session_state.cod_leido = objeto.data.decode('utf-8')
+                st.toast(f"✅ Código detectado: {st.session_state.cod_leido}")
+
+    # --- CAMPO CÓDIGO (Se llena solo si la cámara leyó algo) ---
+    cod = st.text_input("Código:", value=st.session_state.cod_leido, key="ent_cod").strip()
 
     if cod:
-        # Cargar datos si el código cambia
         if st.session_state.get('last_cod') != cod:
             res_p = supabase.table("productos").select("*").eq("codigo", cod).execute()
             if res_p.data:
@@ -49,7 +67,7 @@ def mostrar(supabase):
                 })
                 recalcular("cusd")
 
-    # Campos de entrada (Tus Entry widgets)
+    # Campos de entrada con tus Binds
     st.text_input("Nombre:", key="nom")
     
     col1, col2 = st.columns(2)
@@ -62,9 +80,9 @@ def mostrar(supabase):
         st.number_input("Costo $:", key="cusd", on_change=recalcular, args=("cusd",), format="%.2f")
         st.number_input("Venta Bs:", key="vbs", on_change=recalcular, args=("vbs",), format="%.2f")
 
-    # Botones de Acción
+    # Botones
     st.write("")
-    if st.button("GUARDAR / ACTUALIZAR", use_container_width=True):
+    if st.button("💾 GUARDAR / ACTUALIZAR", use_container_width=True, type="primary"):
         data = {
             "codigo": cod, "nombre": st.session_state.nom,
             "costo_bs": st.session_state.cbs, "costo_usd": st.session_state.cusd,
@@ -72,13 +90,9 @@ def mostrar(supabase):
             "venta_bs": st.session_state.vbs
         }
         supabase.table("productos").upsert(data).execute()
-        st.success("Guardado.")
+        st.success("Guardado en Bodega.")
 
-    if st.button("ELIMINAR"):
-        supabase.table("productos").delete().eq("codigo", cod).execute()
-        st.warning("Eliminado.")
-
-    # Treeview (Tabla)
+    # Tabla
     st.divider()
     res_all = supabase.table("productos").select("*").order("nombre").execute()
     if res_all.data:
