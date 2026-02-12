@@ -3,6 +3,7 @@ import time
 
 def login_screen(supabase):
     st.markdown("<h1 style='text-align: center;'>🔐 ACCESO BODEGA 360</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: gray;'>Panel de Control Móvil</p>", unsafe_allow_html=True)
     
     with st.form("login_form"):
         u = st.text_input("Usuario")
@@ -11,25 +12,31 @@ def login_screen(supabase):
 
         if submit:
             try:
-                # Buscamos en tu tabla original de usuarios
+                # Buscamos al usuario y su clave
                 res = supabase.table("usuarios").select("*").eq("usuario", u).eq("clave", p).execute()
                 
                 if res.data:
                     user_data = res.data[0]
-                    # Validamos que sea administrador. 
-                    # NOTA: Verifica si tu columna se llama 'nivel' o 'rol'. 
-                    # Aquí asumo que si el usuario existe y es el que usas en PC, entra.
-                    st.session_state.autenticado = True
-                    st.session_state.usuario_actual = u
-                    st.success(f"✅ Bienvenido, {u}")
-                    time.sleep(1)
-                    st.rerun()
+                    # Filtro de seguridad: Solo Administrador o maestro
+                    # Usamos .lower() para evitar problemas con mayúsculas
+                    rol_usuario = str(user_data.get('rol', '')).lower()
+                    
+                    if rol_usuario in ['administrador', 'maestro']:
+                        st.session_state.autenticado = True
+                        st.session_state.usuario_actual = u
+                        st.session_state.rol_actual = user_data.get('rol')
+                        st.success(f"✅ Acceso concedido: {u}")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("🚫 Error: Tu rol de '" + user_data.get('rol') + "' no tiene permiso para acceder al móvil.")
                 else:
-                    st.error("❌ Credenciales incorrectas")
+                    st.error("❌ Usuario o clave incorrectos.")
             except Exception as e:
-                st.error(f"Error de base de datos: {e}")
+                st.error(f"Error de conexión: {e}")
 
 def mostrar(supabase):
-    st.title("👥 Panel de Usuarios")
-    st.write("Conectado como Administrador")
-    # Aquí puedes poner una lista de usuarios luego si quieres
+    st.markdown(f"### 👤 Perfil: {st.session_state.usuario_actual}")
+    st.write(f"**Nivel de acceso:** {st.session_state.rol_actual}")
+    st.divider()
+    st.info("Desde este módulo podrás gestionar accesos en el futuro.")
