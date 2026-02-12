@@ -2,8 +2,8 @@ import streamlit as st
 from supabase import create_client
 
 # Sacamos las llaves de los Secrets de Streamlit por seguridad
-URL = st.secrets["SUPABASE_URL"]
-KEY = st.secrets["SUPABASE_KEY"]
+UPABASE_URL = "https://aznkqqrakzhvbtlnjaxz.supabase.co"
+SUPABASE_KEY = "tu_llave_anon_aquí"
 
 def conectar():
     """Establece la conexión con Supabase para la versión Web"""
