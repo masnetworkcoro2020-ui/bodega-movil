@@ -1,15 +1,9 @@
-from supabase import create_client, Client
-import sys
+import streamlit as st
+from supabase import create_client
 
-# --- CONFIGURACIÓN BODEGA 2.0 (INTEGRIDAD MANTENIDA) ---
+# Credenciales centralizadas
 URL = "https://aznkqqrakzhvbtlnjaxz.supabase.co"
-KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF6bmtxcXJha3podmJ0bG5qYXh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5NjY4NTAsImV4cCI6MjA4NTU0Mjg1MH0.4LRC-DsHidHkYyS4CiLUy51r-_lEgGPMvKL7_DnJWFI"
+KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." # Tu clave completa
 
-def conectar():
-    """Establece la conexión con Supabase con diagnóstico de arquitectura."""
-    try:
-        return create_client(URL, KEY)
-    except Exception as e:
-        arch = "32-bit" if sys.maxsize <= 2**31-1 else "64-bit"
-        print(f"Error de conexión en entorno {arch}: {e}")
-        return None
+def get_supabase():
+    return create_client(URL, KEY)
