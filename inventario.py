@@ -5,21 +5,22 @@ import numpy as np
 from pyzbar import pyzbar
 
 def mostrar(supabase):
-    # 1. Obtener Tasa con Tiempo de Espera (Timeout)
+    st.markdown("<h3 style='text-align: center;'>📊 CALCULADORA 360° + ESCÁNER</h3>", unsafe_allow_html=True)
+    
+    # 1. OBTENER TASA CON SEGURO
     tasa = 40.0
     try:
-        # Intentamos una consulta rápida
-        res = supabase.table("ajustes").select("valor").eq("id", 1).execute()
-        if res.data:
-            tasa = float(res.data[0]['valor'])
-    except Exception as e:
-        st.error(f"⚠️ Error de enlace con DB: {e}")
-        tasa = 40.0 # Tasa de respaldo para que la calculadora no muera
+        res_tasa = supabase.table("ajustes").select("valor").eq("id", 1).execute()
+        if res_tasa.data:
+            tasa = float(res_tasa.data[0]['valor'])
+    except: 
+        st.warning("Conexión lenta... Usando tasa predefinida.")
 
-    # Inicializar estado si no existe
+    # Inicializar variables de estado
     if 'cbs' not in st.session_state:
-        st.session_state.update({'cbs':0.0, 'cusd':0.0, 'mar':25.0, 'vusd':0.0, 'vbs':0.0, 'nom':"", 'cod_leido': ""})
+        st.session_state.update({'cbs':0.0, 'cusd':0.0, 'mar':25.0, 'vusd':0.0, 'vbs':0.0, 'nom':"", 'cod_scan':""})
 
+    # Lógica de Recálculo 360° (Igual a tu original)
     def recalcular(origen):
         t = tasa
         m = st.session_state.mar / 100
@@ -39,19 +40,21 @@ def mostrar(supabase):
             st.session_state.cusd = st.session_state.vusd / (1 + m)
             st.session_state.cbs = st.session_state.cusd * t
 
-    # --- ESCÁNER ---
-    with st.expander("📷 CÁMARA (ESCANEAR CÓDIGO)"):
-        foto = st.camera_input("Captura el código")
+    # --- ESCÁNER DE CÁMARA ---
+    with st.expander("📷 TOCAR PARA ESCANEAR CÓDIGO", expanded=False):
+        foto = st.camera_input("Enfoca el código de barras")
         if foto:
             file_bytes = np.asarray(bytearray(foto.read()), dtype=np.uint8)
             img = cv2.imdecode(file_bytes, 1)
-            detec = pyzbar.decode(img)
-            for obj in detec:
-                st.session_state.cod_leido = obj.data.decode('utf-8')
-                st.toast(f"Código: {st.session_state.cod_leido}")
+            objetos = pyzbar.decode(img)
+            if objetos:
+                st.session_state.cod_scan = objetos[0].data.decode('utf-8')
+                st.success(f"Código detectado: {st.session_state.cod_scan}")
+            else:
+                st.error("No se detectó código. Intenta de nuevo.")
 
-    # --- CALCULADORA 360 ---
-    cod = st.text_input("Código:", value=st.session_state.cod_leido, key="ent_cod").strip()
+    # --- FORMULARIO IGUAL AL ORIGINAL ---
+    cod = st.text_input("Código:", value=st.session_state.cod_scan, key="ent_cod").strip()
 
     if cod:
         if st.session_state.get('last_cod') != cod:
@@ -65,7 +68,7 @@ def mostrar(supabase):
                         'last_cod': cod
                     })
                     recalcular("cusd")
-            except: st.error("Error al buscar producto.")
+            except: pass
 
     st.text_input("Nombre:", key="nom")
     
@@ -78,7 +81,8 @@ def mostrar(supabase):
         st.number_input("Costo $:", key="cusd", on_change=recalcular, args=("cusd",), format="%.2f")
         st.number_input("Venta Bs:", key="vbs", on_change=recalcular, args=("vbs",), format="%.2f")
 
-    if st.button("💾 GUARDAR CAMBIOS", use_container_width=True, type="primary"):
+    st.write("")
+    if st.button("💾 GUARDAR EN DB", use_container_width=True, type="primary"):
         try:
             data = {
                 "codigo": cod, "nombre": st.session_state.nom,
@@ -87,5 +91,6 @@ def mostrar(supabase):
                 "venta_bs": st.session_state.vbs
             }
             supabase.table("productos").upsert(data).execute()
-            st.success("Guardado.")
-        except: st.error("No se pudo guardar.")
+            st.toast("✅ ¡Actualizado!", icon="🎉")
+        except:
+            st.error("Error al guardar. Revisa la conexión.")
