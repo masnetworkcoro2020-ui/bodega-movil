@@ -1,11 +1,8 @@
 import streamlit as st
-import cv2
-import numpy as np
-from pyzbar import pyzbar
-from PIL import Image
+from streamlit_barcode_scanner import st_barcode_scanner
 
 def mostrar(supabase):
-    st.markdown("### 📦 INVENTARIO 360° (MÓVIL)")
+    st.markdown("### 📦 INVENTARIO 360°")
 
     # --- TU LÓGICA DE TASA (ID:1) ---
     tasa = 40.0
@@ -14,11 +11,11 @@ def mostrar(supabase):
         if res.data: tasa = float(res.data[0]['valor'])
     except: pass
 
-    # --- ESTADO DE LOS CAMPOS (Variables espejo) ---
+    # --- ESTADO DE LOS CAMPOS (Variables espejo de tu código) ---
     if 'cbs' not in st.session_state:
         st.session_state.update({'cbs':0.0, 'cusd':0.0, 'mar':25.0, 'vbs':0.0, 'nom':"", 'last_cod': ""})
 
-    # --- TU FÓRMULA 360° ORIGINAL (Sin cambios) ---
+    # --- TU FÓRMULA 360° ORIGINAL (Copia Fiel) ---
     def recalcular(origen):
         t = tasa
         m = st.session_state.mar / 100
@@ -35,35 +32,27 @@ def mostrar(supabase):
         elif origen == "mar":
             st.session_state.vbs = (st.session_state.cusd * (1 + m)) * t
 
-    # --- ESCÁNER CON CÁMARA DEL TELÉFONO ---
+    # --- ESCÁNER DE CÁMARA (Para Celular) ---
     st.write("📷 **ESCANEAR CÓDIGO**")
-    img_file = st.camera_input("Enfoque el código de barras")
+    barcode = st_barcode_scanner() # Abre la cámara del teléfono directamente
 
-    if img_file:
-        # Convertir foto del cel a formato que pyzbar entienda
-        img = Image.open(img_file)
-        img_np = np.array(img)
-        codigos = pyzbar.decode(img_np)
-        
-        for c in codigos:
-            codigo_detectado = c.data.decode('utf-8')
-            if codigo_detectado != st.session_state.last_cod:
-                st.session_state.last_cod = codigo_detectado
-                # Búsqueda en DB (Tu lógica cargar_datos_guardados)
-                try:
-                    p = supabase.table("productos").select("*").eq("codigo", codigo_detectado).execute()
-                    if p.data:
-                        prod = p.data[0]
-                        st.session_state.update({
-                            'nom': prod['nombre'], 'cbs': float(prod['costo_bs']),
-                            'cusd': float(prod['costo_usd']), 'mar': float(prod['margen'])
-                        })
-                        recalcular("cusd")
-                        st.success(f"Código detectado: {codigo_detectado}")
-                except: pass
+    if barcode and barcode != st.session_state.last_cod:
+        st.session_state.last_cod = barcode
+        try:
+            p = supabase.table("productos").select("*").eq("codigo", barcode).execute()
+            if p.data:
+                prod = p.data[0]
+                st.session_state.update({
+                    'nom': prod.get('nombre', ""), 
+                    'cbs': float(prod.get('costo_bs', 0)),
+                    'cusd': float(prod.get('costo_usd', 0)), 
+                    'mar': float(prod.get('margen', 25))
+                })
+                recalcular("cusd")
+        except: pass
 
-    # --- CAMPOS DE LLENADO (Fórmula 360°) ---
-    cod_manual = st.text_input("CÓDIGO MANUAL", value=st.session_state.last_cod)
+    # --- CAMPOS DE LLENADO (Interfaz Espejo) ---
+    cod_manual = st.text_input("CÓDIGO DE BARRAS", value=st.session_state.last_cod)
     st.text_input("NOMBRE DEL PRODUCTO", key="nom")
 
     c1, c2 = st.columns(2)
@@ -74,16 +63,18 @@ def mostrar(supabase):
         st.number_input("COSTO $", key="cusd", on_change=recalcular, args=("cusd",), format="%.2f")
         st.number_input("VENTA BS", key="vbs", on_change=recalcular, args=("vbs",), format="%.2f")
 
-    # Cuadro de precio final (Tu diseño verde)
+    # Precio Final (Cuadro Verde)
     st.success(f"### PRECIO VENTA: Bs. {st.session_state.vbs:,.2f}")
 
     if st.button("💾 GUARDAR EN INVENTARIO", use_container_width=True):
         try:
             supabase.table("productos").upsert({
                 "codigo": st.session_state.last_cod if st.session_state.last_cod else cod_manual,
-                "nombre": st.session_state.nom, "costo_bs": st.session_state.cbs,
-                "costo_usd": st.session_state.cusd, "margen": st.session_state.mar,
+                "nombre": st.session_state.nom, 
+                "costo_bs": st.session_state.cbs,
+                "costo_usd": st.session_state.cusd, 
+                "margen": st.session_state.mar,
                 "venta_bs": st.session_state.vbs
             }).execute()
-            st.balloons()
+            st.toast("¡Producto Guardado!")
         except Exception as e: st.error(f"Error: {e}")
