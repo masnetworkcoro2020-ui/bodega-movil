@@ -1,7 +1,4 @@
 streamlit
 supabase
 pandas
-opencv-python-headless
-pyzbar
 Pillow
-streamlit-barcode-scanner
