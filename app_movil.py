@@ -29,6 +29,7 @@ st.markdown("""
     div[data-testid="stNumberInput"]:has(label:contains("Costo $")) input { background-color: #ebedef !important; color: black; }
     div[data-testid="stNumberInput"]:has(label:contains("Venta Bs.")) input { background-color: #d4efdf !important; color: black; font-weight: bold; }
     .stButton>button { width: 100%; height: 60px !important; border-radius: 12px; font-weight: bold; font-size: 18px !important; }
+    div[data-testid="stTextInput"]:has(label:contains("Código:")) input { border: 2px solid #2874A6 !important; font-weight: bold; color: #1B4F72; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -59,13 +60,14 @@ if "f" not in st.session_state:
 tab1, tab2, tab3 = st.tabs(["💰 TASA", "📦 INVENTARIO", "👥 USUARIOS"])
 
 with tab2:
-    # ESCÁNER REPOTENCIADO
-    foto = st.camera_input("📷 ESCANEAR CÓDIGO (APUNTE Y DISPARE)")
+    # ESCÁNER REPOTENCIADO (CORREGIDO SIN CEROS EXTRAS)
+    foto = st.camera_input("📷 ESCANEAR CÓDIGO")
     
     if foto:
         if pyzbar:
             img = Image.open(foto)
             img_np = np.array(ImageOps.grayscale(img))
+            # Le pedimos a pyzbar que sea literal
             decoded = pyzbar.decode(img_np)
             
             if not decoded and cv2 is not None:
@@ -73,19 +75,28 @@ with tab2:
                 decoded = pyzbar.decode(thr)
             
             if decoded:
-                codigo = decoded[0].data.decode('utf-8')
-                st.session_state.f["cod"] = codigo
-                # Búsqueda automática
-                res_b = supabase.table("productos").select("*").eq("codigo", codigo).execute()
+                # Aquí está el cambio: tomamos el valor crudo sin procesar nada más
+                codigo_sucio = str(decoded[0].data.decode('utf-8'))
+                codigo_final = codigo_sucio.strip() # Solo quita espacios si los hay, no agrega nada
+                
+                st.session_state.f["cod"] = codigo_final
+                
+                # Buscamos de una vez en Supabase
+                res_b = supabase.table("productos").select("*").eq("codigo", codigo_final).execute()
                 if res_b.data:
                     p = res_b.data[0]
-                    st.session_state.f.update({"nom": p['nombre'], "cbs": float(p['costo_bs']), "cusd": float(p['costo_usd']), "mar": float(p['margen']), "vbs": float(p['venta_bs']), "vusd": float(p['venta_usd'])})
-                st.success(f"¡Código Detectado!: {codigo}")
+                    st.session_state.f.update({
+                        "nom": p['nombre'], "cbs": float(p['costo_bs']), "cusd": float(p['costo_usd']),
+                        "mar": float(p['margen']), "vbs": float(p['venta_bs']), "vusd": float(p['venta_usd'])
+                    })
+                st.success(f"✅ ¡Leído con exactitud!: {codigo_final}")
                 st.rerun()
+            else:
+                st.warning("No se leyó nada. Asegúrate de que el código no tenga reflejos.")
         else:
-            st.error("Librería de escaneo no disponible. Verifica requirements.txt y packages.txt")
+            st.error("Error de librerías en el servidor.")
 
-    # BUSCADOR Y FORMULARIO (TU LÓGICA DE INVENTARIO.PY)
+    # BUSCADOR
     res_p = supabase.table("productos").select("*").order("nombre").execute()
     df_lista = pd.DataFrame(res_p.data)
     opciones = ["-- NUEVO --"] + sorted(df_lista['nombre'].tolist() if not df_lista.empty else [])
@@ -96,6 +107,7 @@ with tab2:
         st.session_state.f.update({"cbs": float(p['costo_bs']), "cusd": float(p['costo_usd']), "mar": float(p['margen']), "vbs": float(p['venta_bs']), "vusd": float(p['venta_usd']), "cod": str(p['codigo']), "nom": str(p['nombre'])})
         st.session_state.last_s = sel
 
+    # FORMULARIO (MEMORIA DEL SISTEMA)
     cod_in = st.text_input("Código:", value=st.session_state.f["cod"])
     nom_in = st.text_input("Producto:", value=st.session_state.f["nom"])
     
@@ -108,7 +120,7 @@ with tab2:
     in_vusd = c3.number_input("Venta $", value=st.session_state.f["vusd"], format="%.2f")
     in_vbs = c4.number_input("Venta Bs.", value=st.session_state.f["vbs"], format="%.2f")
 
-    # LÓGICA DE RECALCULO 360°
+    # RECALCULO MOTOR 360 (Igual a tu inventario.py)
     factor = (1 + (in_mar / 100))
     if in_cbs != st.session_state.f["cbs"]:
         st.session_state.f.update({"cbs": in_cbs, "cusd": in_cbs/tasa_v, "vusd": (in_cbs/tasa_v)*factor, "vbs": (in_cbs/tasa_v)*factor*tasa_v})
@@ -121,12 +133,17 @@ with tab2:
         st.rerun()
 
     if st.button("💾 GUARDAR"):
-        d = {"codigo": cod_in.upper(), "nombre": nom_in.upper(), "costo_bs": in_cbs, "costo_usd": in_cusd, "margen": in_mar, "venta_usd": in_vusd, "venta_bs": in_vbs}
+        d = {"codigo": cod_in, "nombre": nom_in.upper(), "costo_bs": in_cbs, "costo_usd": in_cusd, "margen": in_mar, "venta_usd": in_vusd, "venta_bs": in_vbs}
         supabase.table("productos").upsert(d).execute()
-        st.success("¡Guardado!")
+        st.success("¡Producto Guardado!")
+        st.rerun()
+
+    if st.button("✨ LIMPIAR FORMULARIO"):
+        st.session_state.f = {"cbs": 0.0, "cusd": 0.0, "mar": 25.0, "vbs": 0.0, "vusd": 0.0, "cod": "", "nom": ""}
         st.rerun()
 
 with tab1:
+    st.subheader("Configuración de Tasa")
     nt = st.number_input("Tasa:", value=tasa_v)
     if st.button("ACTUALIZAR TASA"):
         supabase.table("ajustes").update({"valor": nt}).eq("id", 1).execute()
