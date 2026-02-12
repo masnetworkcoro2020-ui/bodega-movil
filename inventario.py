@@ -1,43 +1,34 @@
 import streamlit as st
-from PIL import Image, ImageOps
-import numpy as np
+import lector  # Importamos tu nueva herramienta
 
-# Intentos de importación para que no se caiga si falta algo
-try:
-    from pyzbar import pyzbar
-except ImportError:
-    pyzbar = None
+def mostrar(supabase):
+    # ... (tu lógica de tasa y session_state) ...
 
-try:
-    import cv2
-except ImportError:
-    cv2 = None
-
-def procesar_escaneo(foto):
-    """
-    Recibe la foto de st.camera_input y devuelve el código de barras procesado.
-    """
-    if not foto or not pyzbar:
-        return None
-
-    # 1. Convertir a imagen de PIL y a escala de grises para mejor lectura
-    img = Image.open(foto)
-    img_np = np.array(ImageOps.grayscale(img))
+    # ESCÁNER LIGERO
+    foto = st.camera_input("📷 ESCANEAR CÓDIGO")
     
-    # 2. Primer intento: Lectura estándar
-    decoded = pyzbar.decode(img_np)
-    
-    # 3. Segundo intento: Si falla, aplicamos blanco y negro puro (Thresholding)
-    if not decoded and cv2 is not None:
-        _, thr = cv2.threshold(img_np, 127, 255, cv2.THRESH_BINARY)
-        decoded = pyzbar.decode(thr)
-    
-    if decoded:
-        raw_code = str(decoded[0].data.decode('utf-8')).strip()
+    if foto:
+        codigo_detectado = lector.procesar_escaneo(foto)
         
-        # Lógica de corrección UPC-A: quitar 0 inicial si el código es largo
-        if raw_code.startswith('0') and len(raw_code) > 10:
-            return raw_code[1:]
-        return raw_code
-    
-    return None
+        if codigo_detectado:
+            st.session_state.f["cod"] = codigo_detectado
+            
+            # Buscamos en la nube
+            res_b = supabase.table("productos").select("*").eq("codigo", codigo_detectado).execute()
+            if res_b.data:
+                p = res_b.data[0]
+                st.session_state.f.update({
+                    "nom": p['nombre'], "cbs": float(p['costo_bs']), "cusd": float(p['costo_usd']),
+                    "mar": float(p['margen']), "vbs": float(p['venta_bs']), "vusd": float(p['venta_usd'])
+                })
+                st.success(f"✅ Encontrado: {p['nombre']}")
+            else:
+                # Nuevo producto, limpiamos excepto el código
+                st.session_state.f.update({"nom": "", "cbs": 0.0, "cusd": 0.0, "vbs": 0.0, "vusd": 0.0})
+                st.warning("🆕 Producto nuevo")
+            
+            st.rerun()
+        else:
+            st.error("❌ No se pudo leer. Intenta de nuevo.")
+
+    # ... (Resto del formulario y Motor 360) ...
