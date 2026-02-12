@@ -2,7 +2,6 @@ import streamlit as st
 from PIL import Image, ImageOps
 import numpy as np
 
-# Intentos de importación para que no se caiga si falta algo
 try:
     from pyzbar import pyzbar
 except ImportError:
@@ -14,28 +13,35 @@ except ImportError:
     cv2 = None
 
 def procesar_escaneo(foto):
-    """
-    Recibe la foto de st.camera_input y devuelve el código de barras procesado.
-    """
     if not foto or not pyzbar:
         return None
 
-    # 1. Convertir a imagen de PIL y a escala de grises para mejor lectura
-    img = Image.open(foto)
-    img_np = np.array(ImageOps.grayscale(img))
+    # 1. Convertir a formato OpenCV
+    file_bytes = np.asarray(bytearray(foto.read()), dtype=np.uint8)
+    img = cv2.imdecode(file_bytes, 1)
     
-    # 2. Primer intento: Lectura estándar
-    decoded = pyzbar.decode(img_np)
+    # 2. Convertir a Grises y mejorar contraste
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     
-    # 3. Segundo intento: Si falla, aplicamos blanco y negro puro (Thresholding)
-    if not decoded and cv2 is not None:
-        _, thr = cv2.threshold(img_np, 127, 255, cv2.THRESH_BINARY)
-        decoded = pyzbar.decode(thr)
+    # Intentar lectura 1: Imagen original en grises
+    decoded = pyzbar.decode(gray)
     
+    if not decoded:
+        # Intentar lectura 2: Umbral adaptativo (Elimina sombras y reflejos)
+        # Esto hace que las barras resalten muchísimo
+        thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                      cv2.THRESH_BINARY, 11, 2)
+        decoded = pyzbar.decode(thresh)
+
+    if not decoded:
+        # Intentar lectura 3: Dilatación (Engrosa las barras si están muy finas)
+        kernel = np.ones((3,3), np.uint8)
+        dilated = cv2.dilate(gray, kernel, iterations=1)
+        decoded = pyzbar.decode(dilated)
+
     if decoded:
         raw_code = str(decoded[0].data.decode('utf-8')).strip()
-        
-        # Lógica de corrección UPC-A: quitar 0 inicial si el código es largo
+        # Regla de oro de tu programa original: quitar 0 inicial
         if raw_code.startswith('0') and len(raw_code) > 10:
             return raw_code[1:]
         return raw_code
