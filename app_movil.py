@@ -154,3 +154,4 @@ with tab1:
     if st.button("ACTUALIZAR TASA"):
         supabase.table("ajustes").update({"valor": nt}).eq("id", 1).execute()
         st.rerun()
+
