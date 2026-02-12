@@ -2,24 +2,23 @@ import streamlit as st
 import pandas as pd
 
 def mostrar(supabase):
-    st.markdown("<h3 style='text-align: center;'>📦 CALCULADORA DE INVENTARIO 360</h3>", unsafe_allow_html=True)
-    
-    # 1. OBTENER TASA (Tu ID:1 original)
+    # 1. TASA DESDE LA DB (ID:1 como el original)
     tasa = 1.0
     try:
-        res_tasa = supabase.table("ajustes").select("valor").eq("id", 1).execute()
-        if res_tasa.data:
-            tasa = float(res_tasa.data[0]['valor'])
+        res = supabase.table("ajustes").select("valor").eq("id", 1).execute()
+        if res.data:
+            tasa = float(res.data[0]['valor'])
     except: tasa = 40.0
 
-    # Inicializar el estado de los campos si no existen
+    # INICIALIZAR VARIABLES DE CÁLCULO (Tu lógica 360)
     if 'cbs' not in st.session_state:
-        st.session_state.update({'cbs':0.0, 'cusd':0.0, 'mar':25.0, 'vusd':0.0, 'vbs':0.0, 'nom':""})
+        st.session_state.update({'cbs':0.0, 'cusd':0.0, 'mar':30.0, 'vusd':0.0, 'vbs':0.0})
 
-    # --- LÓGICA DE RECÁLCULO (IGUAL A TU FUNCIÓN recalcular() DE PC) ---
-    def actualizar(origen):
+    # FUNCIÓN DE RECÁLCULO (Copia exacta de tu lógica de PC)
+    def recalcular(origen):
         t = tasa
         m = st.session_state.mar / 100
+        
         if origen == "cbs":
             st.session_state.cusd = st.session_state.cbs / t
             st.session_state.vusd = st.session_state.cusd * (1 + m)
@@ -36,70 +35,55 @@ def mostrar(supabase):
             st.session_state.cusd = st.session_state.vusd / (1 + m)
             st.session_state.cbs = st.session_state.cusd * t
 
-    # --- DISEÑO DE ENTRADA (Mismos colores de tu PC) ---
-    with st.container():
-        # Escáner nativo rápido
-        foto = st.camera_input("📷 ESCANEAR CÓDIGO")
-        cod = st.text_input("Código de Barras", key="cod_actual").strip().upper()
+    st.markdown(f"### 🧮 Calculadora 360° (Tasa: {tasa})")
 
-        if cod:
-            # Si el código cambia, cargamos datos de la DB
-            if 'last_cod' not in st.session_state or st.session_state.last_cod != cod:
-                res = supabase.table("productos").select("*").eq("codigo", cod).execute()
-                if res.data:
-                    p = res.data[0]
-                    st.session_state.update({
-                        'nom': p.get('nombre', ""), 'cbs': float(p.get('costo_bs', 0)),
-                        'cusd': float(p.get('costo_usd', 0)), 'mar': float(p.get('margen', 25)),
-                        'last_cod': cod
-                    })
-                    actualizar("cusd")
+    # BÚSQUEDA
+    cod = st.text_input("Código de Barras", key="main_cod").strip()
+    
+    if cod:
+        res = supabase.table("productos").select("*").eq("codigo", cod).execute()
+        if res.data:
+            p = res.data[0]
+            # Carga inicial de datos
+            if st.session_state.get('last_cod') != cod:
+                st.session_state.update({
+                    'nom': p['nombre'], 'cbs': float(p['costo_bs']),
+                    'cusd': float(p['costo_usd']), 'mar': float(p['margen']),
+                    'last_cod': cod
+                })
+                recalcular("cusd")
 
-        st.text_input("Nombre del Producto", key="nom")
+            st.text_input("Nombre del Producto", key="nom")
 
-        # Fila 1: Costos (Tus colores: Amarillo y Gris)
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("<label style='color: #f1c40f;'>Costo Bs. (Fijo)</label>", unsafe_allow_html=True)
-            st.number_input("", key="cbs", format="%.2f", on_change=actualizar, args=("cbs",), label_visibility="collapsed")
-        with c2:
-            st.markdown("<label style='color: #85929e;'>Costo $ (Reposición)</label>", unsafe_allow_html=True)
-            st.number_input("", key="cusd", format="%.2f", on_change=actualizar, args=("cusd",), label_visibility="collapsed")
+            # --- LOS CAMPOS CON FÓRMULAS ---
+            col1, col2 = st.columns(2)
+            with col1:
+                # COSTO BS -> Dispara Costo USD y Ventas
+                st.number_input("Costo Bs.", key="cbs", on_change=recalcular, args=("cbs",), format="%.2f")
+                # MARGEN % -> Dispara Ventas
+                st.number_input("Margen %", key="mar", on_change=recalcular, args=("mar",), step=1.0)
+            
+            with col2:
+                # COSTO USD -> Dispara Costo Bs y Ventas
+                st.number_input("Costo USD ($)", key="cusd", on_change=recalcular, args=("cusd",), format="%.2f")
+                # VENTA USD (Calculado)
+                st.number_input("Venta USD ($)", key="vusd", format="%.2f", disabled=True)
 
-        # Fila 2: Margen y Venta $
-        c3, c4 = st.columns(2)
-        with c3:
-            st.number_input("Margen %", key="mar", step=1.0, on_change=actualizar, args=("mar",))
-        with c4:
-            st.number_input("Venta $", key="vusd", format="%.2f", disabled=True)
+            # VENTA BS (El campo maestro)
+            st.number_input("VENTA PÚBLICO BS.", key="vbs", on_change=recalcular, args=("vbs",), format="%.2f")
 
-        # Fila 3: VENTA BS (Tu cuadro Verde grande)
-        st.markdown(f"""
-            <div style='background-color: #d4efdf; padding: 15px; border-radius: 10px; text-align: center; border: 2px solid #27ae60;'>
-                <p style='color: black; margin: 0; font-weight: bold;'>VENTA BS. (MÓVIL)</p>
-                <h1 style='color: #1e8449; margin: 0;'>Bs. {st.session_state.vbs:.2f}</h1>
-            </div>
-        """, unsafe_allow_html=True)
-        # Campo oculto para que el usuario pueda forzar el precio en Bs si quiere
-        st.number_input("Ajustar Venta Bs. manualmente:", key="vbs", on_change=actualizar, args=("vbs",))
+            # BOTÓN DE GUARDADO (Para mandar los cálculos a la nube)
+            if st.button("💾 SINCRONIZAR CON BODEGA", use_container_width=True, type="primary"):
+                datos = {
+                    "costo_bs": st.session_state.cbs, "costo_usd": st.session_state.cusd,
+                    "margen": st.session_state.mar, "venta_usd": st.session_state.vusd,
+                    "venta_bs": st.session_state.vbs
+                }
+                supabase.table("productos").update(datos).eq("codigo", cod).execute()
+                st.success("¡Datos guardados!")
 
-    # --- BOTONERA ---
-    st.write("")
-    if st.button("💾 GUARDAR CAMBIOS EN DB", use_container_width=True, type="primary"):
-        datos = {
-            "codigo": cod, "nombre": st.session_state.nom,
-            "costo_bs": st.session_state.cbs, "costo_usd": st.session_state.cusd,
-            "margen": st.session_state.mar, "venta_usd": st.session_state.vusd,
-            "venta_bs": st.session_state.vbs
-        }
-        supabase.table("productos").upsert(datos).execute()
-        st.success("¡Sincronizado con la Bodega! ✅")
-
-    # --- TU TREEVIEW (Tabla completa) ---
-    with st.expander("📋 VER TODO EL INVENTARIO"):
-        res_all = supabase.table("productos").select("*").order("nombre").execute()
+    # TREEVIEW (Visualización rápida)
+    with st.expander("📊 Vista de Tabla"):
+        res_all = supabase.table("productos").select("codigo,nombre,venta_bs").limit(20).execute()
         if res_all.data:
-            df = pd.DataFrame(res_all.data)
-            # Reordenamos como tu Treeview
-            cols_ok = ["codigo", "nombre", "costo_bs", "costo_usd", "margen", "venta_usd", "venta_bs"]
-            st.dataframe(df[cols_ok], use_container_width=True)
+            st.dataframe(pd.DataFrame(res_all.data), use_container_width=True)
