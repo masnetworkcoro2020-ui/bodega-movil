@@ -2,31 +2,28 @@ import streamlit as st
 from config import get_supabase
 import usuarios, tasa, inventario
 
-# 1. Configuración de página optimizada para móvil
-st.set_page_config(page_title="Bodega 360", layout="centered", initial_sidebar_state="collapsed")
+# Configuración de página
+st.set_page_config(page_title="Bodega 360", layout="centered")
 
-# 2. Conectar a tu base de datos (con tus llaves de config.py)
+# Conexión a Supabase
 supabase = get_supabase()
 
-# 3. Inicializar el estado de la sesión
+# Control de sesión
 if "autenticado" not in st.session_state:
     st.session_state.autenticado = False
 
-# --- FLUJO DE SEGURIDAD ---
 if not st.session_state.autenticado:
     usuarios.login_screen(supabase)
 else:
-    # --- MENÚ PRINCIPAL UNA VEZ LOGUEADO ---
-    st.sidebar.image("logotipo.png", width=150)
-    st.sidebar.title(f"Hola, {st.session_state.usuario_actual}")
+    # Menú lateral
+    st.sidebar.title(f"👤 {st.session_state.usuario_actual}")
+    opcion = st.sidebar.radio("MENÚ PRINCIPAL", ["💰 TASA BCV", "📦 INVENTARIO", "👤 MI PERFIL"])
     
-    opcion = st.sidebar.radio("IR A:", ["💰 TASA BCV", "📦 INVENTARIO", "👤 MI PERFIL"])
-    
-    if st.sidebar.button("🚪 SALIR"):
+    if st.sidebar.button("🚪 CERRAR SESIÓN"):
         st.session_state.autenticado = False
         st.rerun()
 
-    # --- CARGA DE MÓDULOS ---
+    # Carga de módulos
     if opcion == "💰 TASA BCV":
         tasa.mostrar(supabase)
     elif opcion == "📦 INVENTARIO":
