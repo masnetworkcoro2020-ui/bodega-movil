@@ -1,32 +1,26 @@
 import streamlit as st
+import cv2
+import numpy as np
+from pyzbar import pyzbar
+from PIL import Image
 
 def mostrar(supabase):
-    # CSS para que se vea igual (Botón Rojo y Cuadro Verde)
-    st.markdown("""
-        <style>
-        .stButton>button { background-color: #ff4b4b; color: white; width: 100%; font-weight: bold; }
-        .venta-bs-box { background-color: #d4edda; border: 2px solid #28a745; padding: 15px; border-radius: 10px; text-align: center; }
-        .venta-bs-price { color: #155724; font-size: 32px; font-weight: bold; margin: 0; }
-        </style>
-    """, unsafe_allow_html=True)
+    st.markdown("### 📦 INVENTARIO 360° (MÓVIL)")
 
-    st.markdown("### 📦 MODULO DE INVENTARIO")
-
-    # --- OBTENER TASA (ID:1 exacto a tu código) ---
-    tasa_actual = 40.0
+    # --- TU LÓGICA DE TASA (ID:1) ---
+    tasa = 40.0
     try:
         res = supabase.table("ajustes").select("valor").eq("id", 1).execute()
-        if res.data:
-            tasa_actual = float(res.data[0]['valor'])
+        if res.data: tasa = float(res.data[0]['valor'])
     except: pass
 
-    # --- ESTADO DE LOS CAMPOS (Tus self.ent_...) ---
+    # --- ESTADO DE LOS CAMPOS (Variables espejo) ---
     if 'cbs' not in st.session_state:
         st.session_state.update({'cbs':0.0, 'cusd':0.0, 'mar':25.0, 'vbs':0.0, 'nom':"", 'last_cod': ""})
 
-    # --- TU FÓRMULA 360° (Copia Fiel de tu función recalcular) ---
+    # --- TU FÓRMULA 360° ORIGINAL (Sin cambios) ---
     def recalcular(origen):
-        t = tasa_actual
+        t = tasa
         m = st.session_state.mar / 100
         if origen == "cbs":
             st.session_state.cusd = st.session_state.cbs / t
@@ -41,59 +35,55 @@ def mostrar(supabase):
         elif origen == "mar":
             st.session_state.vbs = (st.session_state.cusd * (1 + m)) * t
 
-    # --- CAMPOS DE LLENADO ---
-    cod = st.text_input("CÓDIGO DE BARRAS", value=st.session_state.last_cod)
+    # --- ESCÁNER CON CÁMARA DEL TELÉFONO ---
+    st.write("📷 **ESCANEAR CÓDIGO**")
+    img_file = st.camera_input("Enfoque el código de barras")
 
-    # Búsqueda automática (Carga fiel de cargar_datos_guardados)
-    if cod and st.session_state.last_cod != cod:
-        try:
-            p = supabase.table("productos").select("*").eq("codigo", cod).execute()
-            if p.data:
-                prod = p.data[0]
-                st.session_state.update({
-                    'nom': prod['nombre'],
-                    'cbs': float(prod.get('costo_bs', 0)),
-                    'cusd': float(prod.get('costo_usd', 0)),
-                    'mar': float(prod.get('margen', 25)),
-                    'last_cod': cod
-                })
-                recalcular("cusd")
-        except: pass
+    if img_file:
+        # Convertir foto del cel a formato que pyzbar entienda
+        img = Image.open(img_file)
+        img_np = np.array(img)
+        codigos = pyzbar.decode(img_np)
+        
+        for c in codigos:
+            codigo_detectado = c.data.decode('utf-8')
+            if codigo_detectado != st.session_state.last_cod:
+                st.session_state.last_cod = codigo_detectado
+                # Búsqueda en DB (Tu lógica cargar_datos_guardados)
+                try:
+                    p = supabase.table("productos").select("*").eq("codigo", codigo_detectado).execute()
+                    if p.data:
+                        prod = p.data[0]
+                        st.session_state.update({
+                            'nom': prod['nombre'], 'cbs': float(prod['costo_bs']),
+                            'cusd': float(prod['costo_usd']), 'mar': float(prod['margen'])
+                        })
+                        recalcular("cusd")
+                        st.success(f"Código detectado: {codigo_detectado}")
+                except: pass
 
+    # --- CAMPOS DE LLENADO (Fórmula 360°) ---
+    cod_manual = st.text_input("CÓDIGO MANUAL", value=st.session_state.last_cod)
     st.text_input("NOMBRE DEL PRODUCTO", key="nom")
 
-    # Columnas iguales a tu grid
     c1, c2 = st.columns(2)
     with c1:
-        st.number_input("COSTO BS (FIJO)", key="cbs", on_change=recalcular, args=("cbs",), format="%.2f")
+        st.number_input("COSTO BS", key="cbs", on_change=recalcular, args=("cbs",), format="%.2f")
         st.number_input("MARGEN %", key="mar", on_change=recalcular, args=("mar",), step=1.0)
     with c2:
-        st.number_input("COSTO $ (REPOSICIÓN)", key="cusd", on_change=recalcular, args=("cusd",), format="%.2f")
-        st.number_input("AJUSTE VENTA MANUAL", key="vbs", on_change=recalcular, args=("vbs",), format="%.2f")
+        st.number_input("COSTO $", key="cusd", on_change=recalcular, args=("cusd",), format="%.2f")
+        st.number_input("VENTA BS", key="vbs", on_change=recalcular, args=("vbs",), format="%.2f")
 
-    # Cuadro Verde de Venta (Reflejo exacto)
-    st.markdown(f"""
-        <div class="venta-bs-box">
-            <span style="color: #155724; font-size: 14px; font-weight: bold;">VENTA BS. MÓVIL</span><br>
-            <p class="venta-bs-price">Bs. {st.session_state.vbs:,.2f}</p>
-        </div>
-    """, unsafe_allow_html=True)
+    # Cuadro de precio final (Tu diseño verde)
+    st.success(f"### PRECIO VENTA: Bs. {st.session_state.vbs:,.2f}")
 
-    st.write("") 
-
-    if st.button("💾 GUARDAR CAMBIOS EN INVENTARIO"):
+    if st.button("💾 GUARDAR EN INVENTARIO", use_container_width=True):
         try:
-            datos = {
-                "codigo": cod, "nombre": st.session_state.nom,
-                "costo_bs": st.session_state.cbs, "costo_usd": st.session_state.cusd,
-                "mar": st.session_state.mar, "vbs": st.session_state.vbs # Nombres de tu DB
-            }
-            # Cambié los keys de arriba para que coincidan 100% con tu tabla
             supabase.table("productos").upsert({
-                "codigo": cod, "nombre": st.session_state.nom,
-                "costo_bs": st.session_state.cbs, "costo_usd": st.session_state.cusd,
-                "margen": st.session_state.mar, "venta_bs": st.session_state.vbs
+                "codigo": st.session_state.last_cod if st.session_state.last_cod else cod_manual,
+                "nombre": st.session_state.nom, "costo_bs": st.session_state.cbs,
+                "costo_usd": st.session_state.cusd, "margen": st.session_state.mar,
+                "venta_bs": st.session_state.vbs
             }).execute()
-            st.success("✅ Guardado.")
-        except Exception as e:
-            st.error(f"Error: {e}")
+            st.balloons()
+        except Exception as e: st.error(f"Error: {e}")
