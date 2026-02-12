@@ -1,6 +1,8 @@
 import streamlit as st
 from config import get_supabase
-import usuarios, tasa, inventario
+import usuarios
+import tasa
+import inventario
 
 # Configuración
 st.set_page_config(page_title="Bodega 360", layout="centered")
@@ -14,7 +16,7 @@ if "autenticado" not in st.session_state:
 if not st.session_state.autenticado:
     usuarios.login_screen(supabase)
 else:
-    st.sidebar.title(f"👤 {st.session_state.usuario_actual}")
+    st.sidebar.title(f"👤 {st.session_state.get('usuario_actual', 'Usuario')}")
     opcion = st.sidebar.radio("MENÚ", ["💰 TASA", "📦 INVENTARIO", "👤 PERFIL"])
     
     if st.sidebar.button("🚪 SALIR"):
