@@ -15,8 +15,7 @@ st.markdown("""
     div[data-testid="stNumberInput"]:has(label:contains("Costo Bs.")) input { background-color: #fcf3cf !important; color: black; }
     div[data-testid="stNumberInput"]:has(label:contains("Costo $")) input { background-color: #ebedef !important; color: black; }
     div[data-testid="stNumberInput"]:has(label:contains("Venta Bs.")) input { background-color: #d4efdf !important; color: black; font-weight: bold; }
-    .stButton>button { width: 100%; height: 55px !important; border-radius: 12px; font-weight: bold; margin-top: 10px; }
-    /* Estilo para las tarjetas de usuarios */
+    .stButton>button { width: 100%; height: 55px !important; border-radius: 12px; font-weight: bold; }
     .user-card { background-color: #f8f9fa; padding: 15px; border-radius: 10px; border-left: 5px solid #1f538d; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
@@ -37,11 +36,17 @@ with tab1:
         st.success("Tasa Actualizada")
         st.rerun()
 
-# --- PESTAÑA INVENTARIO (MOTOR 360°) ---
+# --- PESTAÑA INVENTARIO (CON ESCANEO Y MOTOR 360) ---
 with tab2:
     if "f" not in st.session_state:
         st.session_state.f = {"cbs": 0.0, "cusd": 0.0, "mar": 25.0, "vbs": 0.0, "vusd": 0.0, "cod": "", "nom": ""}
     
+    # --- ESCANEO ---
+    foto_codigo = st.camera_input("📷 ESCANEAR CÓDIGO")
+    if foto_codigo:
+        st.info("Código capturado. (Aquí podrías integrar un decodificador si fuera necesario)")
+
+    # Buscador para editar
     res_p = supabase.table("productos").select("*").order("nombre").execute()
     df_lista = pd.DataFrame(res_p.data)
     opciones = ["-- NUEVO --"] + sorted(df_lista['nombre'].tolist() if not df_lista.empty else [])
@@ -55,17 +60,21 @@ with tab2:
         st.session_state.f = {"cbs": 0.0, "cusd": 0.0, "mar": 25.0, "vbs": 0.0, "vusd": 0.0, "cod": "", "nom": ""}
         st.session_state.last_sel = "-- NUEVO --"
 
+    # Campos
     cod_in = st.text_input("Código:", value=st.session_state.f["cod"])
     nom_in = st.text_input("Producto:", value=st.session_state.f["nom"])
+    
     c1, c2 = st.columns(2)
     in_cbs = c1.number_input("Costo Bs.", value=st.session_state.f["cbs"], format="%.2f")
     in_cusd = c2.number_input("Costo $", value=st.session_state.f["cusd"], format="%.2f")
+    
     in_mar = st.number_input("Margen %", value=st.session_state.f["mar"], format="%.1f")
+    
     v1, v2 = st.columns(2)
     in_vusd = v1.number_input("Venta $", value=st.session_state.f["vusd"], format="%.2f")
     in_vbs = v2.number_input("Venta Bs.", value=st.session_state.f["vbs"], format="%.2f")
 
-    # LÓGICA 360 CIRCULAR
+    # LÓGICA 360 CIRCULAR (PC ORIGINAL)
     if in_vbs != st.session_state.f["vbs"]:
         st.session_state.f["vbs"] = in_vbs
         st.session_state.f["vusd"] = in_vbs / tasa_v
@@ -91,38 +100,19 @@ with tab2:
         st.success("Guardado")
         st.rerun()
 
-# --- PESTAÑA USUARIOS (ARREGLADA) ---
+# --- PESTAÑA USUARIOS ---
 with tab3:
-    st.subheader("👥 Gestión de Usuarios")
-    
-    # 1. Formulario para agregar (en un expansor para ahorrar espacio)
-    with st.expander("➕ Crear Nuevo Usuario"):
-        nuevo_u = st.text_input("Nombre de Usuario:")
-        nuevo_p = st.text_input("Contraseña:", type="password")
-        nuevo_r = st.selectbox("Rol:", ["Administrador", "Vendedor"])
-        if st.button("REGISTRAR USUARIO"):
-            if nuevo_u and nuevo_p:
-                supabase.table("usuarios").insert({"usuario": nuevo_u, "clave": nuevo_p, "rol": nuevo_r}).execute()
-                st.success("Usuario creado")
-                st.rerun()
-            else:
-                st.error("Llena todos los campos")
+    st.subheader("👥 Usuarios")
+    with st.expander("➕ Crear Nuevo"):
+        nu, np = st.text_input("Usuario:"), st.text_input("Clave:", type="password")
+        nr = st.selectbox("Rol:", ["Administrador", "Vendedor"])
+        if st.button("REGISTRAR"):
+            supabase.table("usuarios").insert({"usuario": nu, "clave": np, "rol": nr}).execute()
+            st.rerun()
 
-    st.divider()
-    
-    # 2. Lista de usuarios en formato "Tarjetas" para móvil
     res_u = supabase.table("usuarios").select("*").execute()
-    if res_u.data:
-        for u in res_u.data:
-            st.markdown(f"""
-                <div class="user-card">
-                    <strong>👤 Usuario:</strong> {u['usuario']}<br>
-                    <strong>🛡️ Rol:</strong> {u['rol']}
-                </div>
-            """, unsafe_allow_html=True)
-            # Botón para eliminar usuario específico
-            if st.button(f"Eliminar {u['usuario']}", key=f"del_{u['usuario']}"):
-                supabase.table("usuarios").delete().eq("usuario", u['usuario']).execute()
-                st.rerun()
-    else:
-        st.info("No hay usuarios registrados")
+    for u in res_u.data:
+        st.markdown(f'<div class="user-card"><b>{u["usuario"]}</b> ({u["rol"]})</div>', unsafe_allow_html=True)
+        if st.button(f"🗑️ Eliminar {u['usuario']}", key=u['usuario']):
+            supabase.table("usuarios").delete().eq("usuario", u['usuario']).execute()
+            st.rerun()
