@@ -1,70 +1,55 @@
 import streamlit as st
 from supabase import create_client
 
-# --- LAS LLAVES DE LA CORONA (Extraídas de tu config.py) ---
+# --- LLAVES DE LA CORONA (Conexión Directa) ---
 URL_CORONA = "https://aznkqqrakzhvbtlnjaxz.supabase.co"
 KEY_CORONA = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF6bmtxcXJha3podmJ0bG5qYXh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5NjY4NTAsImV4cCI6MjA4NTU0Mjg1MH0.4LRC-DsHidHkYyS4CiLUy51r-_lEgGPMvKL7_DnJWFI"
 
-# 1. CONFIGURACIÓN DE PÁGINA
-st.set_page_config(
-    page_title="Bodega Móvil",
-    page_icon="🚀",
-    layout="centered"
-)
+# Configuración básica de la página
+st.set_page_config(page_title="Bodega Móvil", layout="centered")
 
-# 2. CONEXIÓN DIRECTA A SUPABASE
+# Intentar conexión con Supabase
 try:
     supabase = create_client(URL_CORONA, KEY_CORONA)
 except Exception as e:
-    st.error(f"Error de conexión con la base de datos: {e}")
+    st.error(f"Error de conexión: {e}")
     st.stop()
 
-# 3. CONTROL DE SESIÓN
-if 'autenticado' not in st.session_state:
-    st.session_state.autenticado = False
-if 'usuario_nombre' not in st.session_state:
-    st.session_state.usuario_nombre = ""
+# --- LÓGICA DE ACCESO ---
+if 'conectado' not in st.session_state:
+    st.session_state.conectado = False
 
-# 4. PANTALLA DE LOGIN
-if not st.session_state.autenticado:
-    st.title("🔐 Acceso al Sistema")
+if not st.session_state.conectado:
+    st.title("🔐 Acceso Maestro")
     
-    # Usamos tus credenciales maestras del ADN
-    u = st.text_input("Usuario").strip().lower()
-    p = st.text_input("Contraseña", type="password")
+    # Datos del ADN: jmaar / 15311751
+    user = st.text_input("Usuario")
+    clave = st.text_input("Contraseña", type="password")
     
-    if st.button("INGRESAR", use_container_width=True):
-        # A. EL SUPER USUARIO MAESTRO
-        if u == "jmaar" and p == "15311751":
-            st.session_state.autenticado = True
-            st.session_state.usuario_nombre = "Administrador Maestro"
+    if st.button("ENTRAR", use_container_width=True):
+        if user == "jmaar" and clave == "15311751":
+            st.session_state.conectado = True
             st.rerun()
-        
-        # B. OTROS USUARIOS EN LA BASE DE DATOS
         else:
+            # Opción B: Buscar en Supabase si no es el maestro
             try:
-                # Buscamos en la tabla 'usuarios'
-                res = supabase.table("usuarios").select("*").eq("usuario", u).execute()
-                if res.data:
-                    user_db = res.data[0]
-                    if user_db["clave"] == p:
-                        st.session_state.autenticado = True
-                        st.session_state.usuario_nombre = user_db.get("nombre", u)
-                        st.rerun()
-                    else:
-                        st.error("Contraseña incorrecta")
+                res = supabase.table("usuarios").select("*").eq("usuario", user).execute()
+                if res.data and res.data[0]["clave"] == clave:
+                    st.session_state.conectado = True
+                    st.rerun()
                 else:
-                    st.error("Usuario no encontrado")
-            except Exception as e:
-                st.error("Error al verificar usuario. Intente de nuevo.")
+                    st.error("Credenciales incorrectas")
+            except:
+                st.error("Error validando usuario")
     st.stop()
 
-# 5. PANTALLA PRINCIPAL
-st.title(f"🚀 Bienvenido, {st.session_state.usuario_nombre}")
-st.success("Conexión con Supabase establecida.")
+# --- PANTALLA SI LOGRA ENTRAR ---
+st.title("🚀 Sistema Bodega Móvil")
+st.success("¡Felicidades mano! El motor principal está encendido y conectado a la Corona.")
+st.write(f"Bienvenido de nuevo, **{user if 'user' in locals() else 'JMaar'}**.")
 
-st.info("👈 Abre el menú lateral para entrar al módulo de Inventario.")
+st.info("Ahorita no ves el menú porque borramos la carpeta. Avisame cuando veas este mensaje para crear el primer módulo paso a paso.")
 
-if st.sidebar.button("Cerrar Sesión"):
-    st.session_state.autenticado = False
+if st.button("Cerrar Sesión"):
+    st.session_state.conectado = False
     st.rerun()
