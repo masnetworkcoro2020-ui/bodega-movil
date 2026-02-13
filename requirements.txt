@@ -1,3 +1,2 @@
 streamlit
 supabase
-streamlit-barcode-scanner==0.0.1
