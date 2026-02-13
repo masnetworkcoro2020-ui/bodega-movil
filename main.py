@@ -1,81 +1,55 @@
 import streamlit as st
-from supabase import create_client
 
-# 1. LLAVES DE LA CORONA (Conexión)
-URL = "https://aznkqqrakzhvbtlnjaxz.supabase.co"
-KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF6bmtxcXJha3podmJ0bG5qYXh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5NjY4NTAsImV4cCI6MjA4NTU0Mjg1MH0.4LRC-DsHidHkYyS4CiLUy51r-_lEgGPMvKL7_DnJWFI"
+# Configuración de página limpia
+st.set_page_config(page_title="Bodega Móvil - Acceso", layout="centered")
 
-@st.cache_resource
-def init_supabase():
-    return create_client(URL, KEY)
-
-supabase = init_supabase()
-
-# 2. CONTROL DE ACCESO MAESTRO
+# --- ADN DE SEGURIDAD (Estado de Sesión) ---
 if 'auth' not in st.session_state:
     st.session_state.auth = False
+if 'user' not in st.session_state:
+    st.session_state.user = None
 
+# --- VISTA 1: EL LOGIN (Solo Admin) ---
 if not st.session_state.auth:
-    st.title("🔐 Acceso al Sistema")
-    u = st.text_input("Usuario")
-    p = st.text_input("Clave", type="password")
-    if st.button("INGRESAR"):
-        if u == "jmaar" and p == "15311751":
-            st.session_state.auth = True
-            st.rerun()
+    st.markdown("<h1 style='text-align: center;'>🔐 Acceso Administrativo</h1>", unsafe_allow_html=True)
+    
+    with st.form("login_form"):
+        u = st.text_input("Usuario Manager").lower().strip()
+        p = st.text_input("Contraseña Maestra", type="password")
+        submit = st.form_submit_button("INGRESAR AL SISTEMA", use_container_width=True)
+        
+        if submit:
+            # Tu usuario y clave originales
+            if u == "jmaar" and p == "15311751":
+                st.session_state.auth = True
+                st.session_state.user = u
+                st.rerun()
+            else:
+                st.error("Credenciales no autorizadas")
     st.stop()
 
-# 3. NAVEGADOR DE MÓDULOS (Sustituye a switch_page para evitar errores)
-if 'pagina' not in st.session_state:
-    st.session_state.pagina = "panel"
+# --- VISTA 2: EL PANEL DE CONTROL (Después de entrar) ---
+st.markdown(f"### ⚡ Bienvenido, {st.session_state.user.upper()}")
+st.title("🕹️ Panel de Control")
+st.write("Selecciona el módulo que deseas operar hoy:")
 
-# Barra Lateral de Navegación
-with st.sidebar:
-    st.title("📌 Menú")
-    if st.button("🏠 Panel Principal"): st.session_state.pagina = "panel"
-    if st.button("📦 Inventario"): st.session_state.pagina = "inventario"
-    if st.button("🪙 Tasa BCV"): st.session_state.pagina = "tasa"
-    st.divider()
-    if st.button("Cerrar Sesión"):
-        st.session_state.auth = False
-        st.rerun()
+st.divider()
 
-# ==========================================
-# MÓDULO: PANEL PRINCIPAL
-# ==========================================
-if st.session_state.pagina == "panel":
-    st.title("🚀 Panel de Control")
-    st.write("Bienvenido. Selecciona una herramienta en el menú lateral.")
+# Botones grandes para el Panel
+col1, col2 = st.columns(2)
 
-# ==========================================
-# MÓDULO: INVENTARIO (VA SOLO AQUÍ)
-# ==========================================
-elif st.session_state.pagina == "inventario":
-    st.title("📦 Control de Inventario")
-    
-    # 1. EL ESCÁNER (Línea para activar cámara si decides instalar la librería)
-    # try: from streamlit_barcode_scanner import st_barcode_scanner; barcode = st_barcode_scanner()
-    # except: barcode = None
-    
-    # 2. BUSCADOR
-    codigo = st.text_input("Escribe el código de barras:")
-    
-    if codigo:
-        with st.spinner('Consultando a la Corona...'):
-            res = supabase.table("productos").select("*").eq("codigo", codigo).execute()
-            if res.data:
-                p = res.data[0]
-                st.success(f"✅ PRODUCTO: {p['nombre']}")
-                st.metric("PRECIO $", f"{p['precio_dol']}")
-                st.write(f"Stock actual: {p.get('stock', 'N/D')}")
-            else:
-                st.error("🚫 Código no encontrado.")
+with col1:
+    if st.button("📦 ABRIR INVENTARIO", use_container_width=True, height=100):
+        st.switch_page("inventario.py")
 
-# ==========================================
-# MÓDULO: TASA BCV
-# ==========================================
-elif st.session_state.pagina == "tasa":
-    st.title("🪙 Tasa BCV")
-    res_tasa = supabase.table("ajustes").select("valor").eq("parametro", "tasa_bcv").execute()
-    if res_tasa.data:
-        st.metric("Dólar BCV", f"{res_tasa.data[0]['valor']} BS")
+with col2:
+    if st.button("🪙 CONSULTAR TASA BCV", use_container_width=True, height=100):
+        st.switch_page("tasa_bcv.py")
+
+st.divider()
+
+# Botón de salida en el sidebar
+if st.sidebar.button("🔴 Cerrar Sesión Segura"):
+    st.session_state.auth = False
+    st.session_state.user = None
+    st.rerun()
