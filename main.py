@@ -1,43 +1,31 @@
 import streamlit as st
-from supabase import create_client
 
-# 1. CONEXIÓN A LA CORONA
-URL = "https://aznkqqrakzhvbtlnjaxz.supabase.co"
-KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF6bmtxcXJha3podmJ0bG5qYXh6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5NjY4NTAsImV4cCI6MjA4NTU0Mjg1MH0.4LRC-DsHidHkYyS4CiLUy51r-_lEgGPMvKL7_DnJWFI"
-supabase = create_client(URL, KEY)
+st.set_page_config(page_title="Acceso Bodega", layout="centered")
 
-# 2. LOGIN
+# --- ADN DE ACCESO ---
 if 'auth' not in st.session_state:
     st.session_state.auth = False
 
 if not st.session_state.auth:
-    st.title("🔐 Acceso")
+    st.title("🔐 Acceso al Sistema")
     u = st.text_input("Usuario")
     p = st.text_input("Clave", type="password")
     if st.button("INGRESAR"):
         if u == "jmaar" and p == "15311751":
             st.session_state.auth = True
             st.rerun()
+        else:
+            st.error("Clave incorrecta")
     st.stop()
 
-# 3. MENÚ DE NAVEGACIÓN (En lugar de switch_page)
-menu = st.sidebar.radio("Menú", ["Panel Principal", "Inventario", "Tasa BCV"])
+# --- SI YA ESTÁ LOGUEADO ---
+st.title("🚀 Panel Principal")
+col1, col2 = st.columns(2)
 
-if menu == "Panel Principal":
-    st.title("🚀 Panel Principal")
-    st.write("Bienvenido, Administrador.")
+with col1:
+    if st.button("📦 Ir a Inventario", use_container_width=True):
+        st.switch_page("inventario.py") # Salto al archivo independiente
 
-elif menu == "Inventario":
-    st.title("📦 Inventario")
-    # Aquí pegas la lógica de búsqueda que ya teníamos
-    codigo = st.text_input("Código de barras:")
-    if codigo:
-        res = supabase.table("productos").select("*").eq("codigo", codigo).execute()
-        if res.data:
-            st.success(f"Producto: {res.data[0]['nombre']}")
-        else:
-            st.error("No encontrado")
-
-elif menu == "Tasa BCV":
-    st.title("🪙 Tasa BCV")
-    # Lógica de la tasa...
+with col2:
+    if st.button("🪙 Ver Tasa BCV", use_container_width=True):
+        st.switch_page("tasa_bcv.py")
