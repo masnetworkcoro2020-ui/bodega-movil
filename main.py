@@ -1,44 +1,48 @@
 import streamlit as st
 
-st.set_page_config(page_title="Bodega - Panel", layout="centered")
+st.set_page_config(page_title="Bodega Móvil - Acceso", layout="centered")
 
-# --- ADN DE SEGURIDAD ---
+# --- SEGURIDAD ---
 if 'auth' not in st.session_state:
     st.session_state.auth = False
+if 'user' not in st.session_state:
+    st.session_state.user = None
 
+# --- VISTA 1: LOGIN ---
 if not st.session_state.auth:
-    st.markdown("<h1 style='text-align: center;'>🔐 Acceso</h1>", unsafe_allow_html=True)
-    with st.form("login"):
-        u = st.text_input("Usuario").lower().strip()
-        p = st.text_input("Contraseña", type="password")
-        if st.form_submit_button("INGRESAR", use_container_width=True):
-            if u == "jmaar" and p == "15311751":
+    st.markdown("<h1 style='text-align: center;'>🔐 Acceso Administrativo</h1>", unsafe_allow_html=True)
+    with st.form("login_form"):
+        u = st.text_input("Usuario Manager").lower().strip()
+        p = st.text_input("Contraseña Maestra", type="password")
+        if st.form_submit_button("INGRESAR AL SISTEMA", use_container_width=True):
+            if u == "jmaar" and p == "15311751": # Tus datos originales
                 st.session_state.auth = True
+                st.session_state.user = u
                 st.rerun()
             else:
-                st.error("Error de acceso")
+                st.error("Credenciales incorrectas")
     st.stop()
 
-# --- PANEL DE CONTROL (Imagen 2) ---
-st.markdown(f"### ⚡ Bienvenido, JMAAR")
+# --- VISTA 2: PANEL DE CONTROL (Corregido sin error de height) ---
+st.markdown(f"### ⚡ Bienvenido, {st.session_state.user.upper()}")
 st.title("🕹️ Panel de Control")
 st.write("Selecciona el módulo que deseas operar hoy:")
+
+st.divider()
 
 col1, col2 = st.columns(2)
 
 with col1:
-    if st.button("📦 ABRIR INVENTARIO", use_container_width=True, height=100):
-        st.session_state.pagina = "inventario"
-        st.rerun()
+    # Quitamos 'height=100' para que no de error en tu servidor
+    if st.button("📦 ABRIR INVENTARIO", use_container_width=True):
+        st.switch_page("inventario.py")
 
 with col2:
-    if st.button("🪙 CONSULTAR TASA BCV", use_container_width=True, height=100):
-        st.session_state.pagina = "tasa"
-        st.rerun()
-
-# Lógica de navegación interna para evitar errores de archivo
-if 'pagina' in st.session_state:
-    if st.session_state.pagina == "inventario":
-        st.switch_page("inventario.py")
-    elif st.session_state.pagina == "tasa":
+    if st.button("🪙 CONSULTAR TASA BCV", use_container_width=True):
         st.switch_page("tasa_bcv.py")
+
+st.divider()
+
+if st.sidebar.button("🔴 Cerrar Sesión"):
+    st.session_state.auth = False
+    st.rerun()
