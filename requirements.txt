@@ -1,4 +1,6 @@
-streamlit
+customtkinter
+opencv-python
+requests
+numpy
+pyzbar
 supabase
-pandas
-Pillow
