@@ -1,2 +1,3 @@
-supabase
 streamlit
+supabase
+streamlit-barcode-scanner
