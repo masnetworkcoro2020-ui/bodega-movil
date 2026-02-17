@@ -50,11 +50,11 @@ st.sidebar.metric("Tasa de Cambio", f"{tasa} Bs/$")
 
 
 
-menu = ["📸 Escáner", "📝 Gestión 360°", "📦 Inventario"]
+# menu = ["📸 Escáner", "📝 Gestión 360°", "📦 Inventario"]
 
-opcion = st.sidebar.radio("Ir a:", menu)
+# opcion = st.sidebar.radio("Ir a:", menu)
 
-
+opcion = "📝 Gestión 360°"
 
 # --- 1. ESCÁNER (Paso previo) ---
 
