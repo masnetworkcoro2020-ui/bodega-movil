@@ -5,103 +5,104 @@ from config import conectar
 import pandas as pd
 
 # 1. Configuración y Conexión
-st.set_page_config(page_title="Royal Essence Móvil Pro", layout="centered")
+st.set_page_config(page_title="Royal Essence 360°", layout="centered")
 supabase = conectar()
 
-# --- FUNCIÓN TASA (Sincronizada con tu ajustes ID:1) ---
 def obtener_tasa():
     try:
         res = supabase.table("ajustes").select("valor").eq("id", 1).execute()
         return float(res.data[0]['valor']) if res.data else 40.0
     except: return 40.0
 
-tasa_actual = obtener_tasa()
+tasa = obtener_tasa()
 
 if 'codigo_escaneado' not in st.session_state:
     st.session_state.codigo_escaneado = ""
 
-st.title("🛒 Gestión de Bodega Pro")
-st.sidebar.metric("Tasa de Cambio", f"{tasa_actual} Bs/$")
+st.title("🔄 Gestión 360° Móvil")
+st.sidebar.metric("Tasa BCV", f"{tasa} Bs")
 
-menu = ["📸 Escáner", "📝 Gestionar Producto", "📦 Inventario Completo"]
+menu = ["📸 Escáner", "📝 Gestionar Producto", "📦 Inventario"]
 opcion = st.sidebar.radio("Menú:", menu)
 
-# --- 1. ESCÁNER ---
+# --- ESCÁNER ---
 if opcion == "📸 Escáner":
-    st.subheader("Escaneo de Producto")
-    foto = st.camera_input("Enfoca el código de barras")
+    st.subheader("Paso 1: Escanear")
+    foto = st.camera_input("Enfoca el código")
     if foto:
         imagen = Image.open(foto)
         codigos = decode(imagen)
         if codigos:
             lectura = codigos[0].data.decode('utf-8').strip()
-            # Limpieza exacta de ceros iniciales para UPC-A
             st.session_state.codigo_escaneado = lectura[1:] if len(lectura) == 13 and lectura.startswith('0') else lectura
             st.success(f"✅ Código: {st.session_state.codigo_escaneado}")
-            st.info("Pasa a 'Gestionar Producto' para continuar.")
+        else:
+            st.warning("No se leyó nada.")
 
-# --- 2. GESTIONAR (EDITAR O AGREGAR NUEVO) ---
+# --- GESTIÓN 360° (AGREGAR / EDITAR) ---
 elif opcion == "📝 Gestionar Producto":
-    st.subheader("Ficha de Producto")
-    cod_actual = st.text_input("Código de barras:", value=st.session_state.codigo_escaneado)
+    st.subheader("Algoritmo de Precios 360°")
+    cod_actual = st.text_input("Código:", value=st.session_state.codigo_escaneado)
     
     if cod_actual:
         res = supabase.table("productos").select("*").eq("codigo", cod_actual).execute()
         
-        # MODO EDICIÓN (Si ya existe)
-        if res.data:
-            p = res.data[0]
-            st.warning(f"Modificando: {p.get('nombre')}")
-            titulo_boton = "💾 GUARDAR CAMBIOS"
-            modo_nuevo = False
-        # MODO AGREGAR (Si es nuevo)
-        else:
-            st.info("✨ Producto Nuevo detectado. Completa los datos:")
-            p = {} # Diccionario vacío para el formulario
-            titulo_boton = "➕ REGISTRAR PRODUCTO"
-            modo_nuevo = True
+        # Si existe, cargamos datos; si no, valores en cero
+        p = res.data[0] if res.data else {}
+        es_nuevo = len(p) == 0
+        
+        if not es_nuevo: st.warning(f"Editando: {p.get('nombre')}")
+        else: st.info("✨ Registrando producto nuevo")
 
-        with st.form("formulario_producto"):
+        # --- EL ALGORITMO 360 EN EL FORMULARIO ---
+        with st.form("form_360"):
             nombre = st.text_input("Nombre del Producto", value=p.get('nombre', ''))
             
             col1, col2 = st.columns(2)
             with col1:
-                c_bs = st.number_input("Costo Bs (Fijo)", value=float(p.get('costo_bs', 0)), format="%.2f")
-                c_usd = st.number_input("Costo USD $", value=float(p.get('costo_usd', 0)), format="%.2f")
+                # Entrada de Costo Bs (Fijo)
+                c_bs = st.number_input("Costo Bs", value=float(p.get('costo_bs', 0)), format="%.2f")
+                # Cálculo de Costo USD basado en Tasa
+                c_usd = c_bs / tasa if tasa > 0 else 0
+                st.write(f"📉 Costo USD: ${c_usd:.2d}")
+                
             with col2:
-                margen = st.number_input("Margen %", value=float(p.get('margen', 25)), step=1.0)
-                v_usd = st.number_input("Venta USD $", value=float(p.get('venta_usd', 0)), format="%.2f")
+                # Margen de Ganancia
+                margen = st.number_input("Margen %", value=float(p.get('margen', 30)), step=1.0)
             
-            # Cálculo informativo en tiempo real
-            v_bs_estimada = v_usd * tasa_actual
-            st.write(f"💡 **Venta estimada en Bs:** {v_bs_estimada:.2f}")
-
-            if st.form_submit_button(titulo_boton):
-                if nombre:
-                    datos = {
-                        "codigo": cod_actual,
-                        "nombre": nombre.upper(),
-                        "costo_bs": c_bs,
-                        "costo_usd": c_usd,
-                        "margen": margen,
-                        "venta_usd": v_usd,
-                        "venta_bs": v_bs_estimada
-                    }
-                    
-                    if modo_nuevo:
-                        supabase.table("productos").insert(datos).execute()
-                        st.success("✅ Producto registrado exitosamente.")
-                    else:
-                        supabase.table("productos").update(datos).eq("identifi", p['identifi']).execute()
-                        st.success("✅ Datos actualizados correctamente.")
-                    
-                    st.session_state.codigo_escaneado = "" # Limpiar para el siguiente
+            st.markdown("---")
+            # CÁLCULO 360: Venta USD = Costo USD / (1 - Margen/100)
+            # (O la fórmula exacta que uses en tu PC)
+            v_usd_sugerida = c_usd / (1 - (margen/100)) if margen < 100 else 0
+            
+            v_usd = st.number_input("Venta USD $ (Ajustable)", value=float(p.get('venta_usd', v_usd_sugerida)), format="%.2f")
+            
+            # Venta Bs final basada en Venta USD * Tasa
+            v_bs = v_usd * tasa
+            
+            st.subheader(f"💰 Venta Final: {v_bs:.2f} Bs")
+            
+            if st.form_submit_button("🚀 SINCRONIZAR 360 CON LA NUBE"):
+                datos = {
+                    "codigo": cod_actual,
+                    "nombre": nombre.upper(),
+                    "costo_bs": c_bs,
+                    "costo_usd": round(c_usd, 2),
+                    "margen": margen,
+                    "venta_usd": v_usd,
+                    "venta_bs": round(v_bs, 2)
+                }
+                
+                if es_nuevo:
+                    supabase.table("productos").insert(datos).execute()
+                    st.success("✅ ¡Registrado con éxito!")
                 else:
-                    st.error("El nombre es obligatorio.")
+                    supabase.table("productos").update(datos).eq("identifi", p['identifi']).execute()
+                    st.success("✅ ¡Actualización 360 completada!")
 
-# --- 3. INVENTARIO ---
-elif opcion == "📦 Inventario Completo":
-    st.subheader("Resumen de Almacén")
-    res = supabase.table("productos").select("codigo, nombre, venta_usd").order("nombre").execute()
+# --- INVENTARIO ---
+elif opcion == "📦 Inventario":
+    st.subheader("Lista Maestra")
+    res = supabase.table("productos").select("codigo, nombre, venta_usd, venta_bs").execute()
     if res.data:
         st.dataframe(pd.DataFrame(res.data), use_container_width=True)
