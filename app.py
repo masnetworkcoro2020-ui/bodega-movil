@@ -16,7 +16,7 @@ if not st.session_state.autenticado:
         res = supabase.table("usuarios").select("*").eq("usuario", u).eq("clave", c).execute()
         if res.data: 
             st.session_state.autenticado = True
-            st.session_state.user = res.data[0]['nombre']
+            st.session_state.user = res.data[0]['usuario']
             st.rerun()
     st.stop()
 
