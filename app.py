@@ -6,13 +6,12 @@ import pandas as pd
 from datetime import datetime
 
 # 1. Configuración y Conexión
-st.set_page_config(page_title="Royal Essence ERP", layout="centered")
+st.set_page_config(page_title="Royal Essence Pro", layout="centered")
 supabase = conectar()
 
-# --- FUNCIONES DE APOYO ---
+# --- FUNCIONES NÚCLEO ---
 def obtener_tasa():
     try:
-        # Buscamos el valor en tu tabla ajustes, ID 1 (el que usa tu PC)
         res = supabase.table("ajustes").select("valor").eq("id", 1).execute()
         return float(res.data[0]['valor']) if res.data else 40.0
     except: return 40.0
@@ -23,115 +22,128 @@ def actualizar_tasa_db(nueva_tasa):
         return True
     except: return False
 
-def verificar_clave(clave_ingresada):
+def verificar_acceso(user_input, pass_input):
     try:
-        # Busca en la tabla 'usuarios' (ajusta el nombre si es diferente)
-        res = supabase.table("usuarios").select("*").eq("password", clave_ingresada).execute()
-        return len(res.data) > 0
-    except: return False
+        # Verificamos contra tu tabla 'usuarios'
+        res = supabase.table("usuarios").select("*").eq("usuario", user_input).eq("clave", pass_input).execute()
+        return res.data[0] if res.data else None
+    except: return None
 
-# --- LÓGICA DE TASA ---
+# --- INICIALIZACIÓN ---
 tasa = obtener_tasa()
-
-# --- ESTADO DE SESIÓN ---
-if 'autenticado' not in st.session_state: st.session_state.autenticado = False
+if 'auth' not in st.session_state: st.session_state.auth = None
 if 'codigo_escaneado' not in st.session_state: st.session_state.codigo_escaneado = ""
 if 'calc' not in st.session_state: st.session_state.calc = {}
 
-# --- BLOQUEO DE SEGURIDAD ---
-if not st.session_state.autenticado:
-    st.title("🔐 Royal Essence Access")
-    clave = st.text_input("Introduce clave maestra:", type="password")
-    if st.button("Entrar"):
-        if verificar_clave(clave):
-            st.session_state.autenticado = True
+# --- PANTALLA DE LOGIN ---
+if not st.session_state.auth:
+    st.title("🔐 Royal Essence - Acceso")
+    u = st.text_input("Usuario (Ej: marianela, jmaar):").lower()
+    p = st.text_input("Clave:", type="password")
+    if st.button("Iniciar Sesión"):
+        usuario_valido = verificar_acceso(u, p)
+        if usuario_valido:
+            st.session_state.auth = usuario_valido
+            st.success(f"Bienvenido/a {usuario_valido['usuario']}")
             st.rerun()
         else:
-            st.error("❌ Clave inválida.")
+            st.error("Credenciales incorrectas, mano.")
     st.stop()
 
-# --- INTERFAZ PRINCIPAL ---
-st.sidebar.title("Royal Essence")
+# --- INTERFAZ POST-LOGIN ---
+st.sidebar.title(f"👤 {st.session_state.auth['usuario'].upper()}")
 st.sidebar.metric("Tasa Actual", f"{tasa} Bs/$")
 
-menu = ["📸 Escáner", "🛒 Registrar Venta", "📝 Gestión 360°", "📋 Historial", "📦 Inventario", "⚙️ Ajustes"]
+menu = ["📸 Escáner", "🛒 Vender", "📝 Gestión 360°", "📋 Historial", "⚙️ Ajustes"]
 opcion = st.sidebar.radio("Menú", menu)
 
-# --- SECCIÓN NUEVA: AJUSTES (CAMBIAR TASA) ---
+# --- ⚙️ AJUSTES (CAMBIAR TASA) ---
 if opcion == "⚙️ Ajustes":
-    st.subheader("Configuración del Sistema")
-    st.write("Aquí puedes cambiar la tasa del dólar para que afecte a toda la app y a la PC.")
-    
-    nueva_tasa_input = st.number_input("Nueva Tasa Bs/$:", value=tasa, format="%.2f", step=0.10)
-    
-    if st.button("🚀 ACTUALIZAR TASA EN TODA LA RED"):
-        if actualizar_tasa_db(nueva_tasa_input):
-            st.success(f"✅ Tasa actualizada a {nueva_tasa_input} Bs. ¡Ya cambió en la PC también!")
-            st.balloons()
+    st.subheader("Configuración de Tasa")
+    nueva_tasa = st.number_input("Editar Tasa BCV:", value=tasa, format="%.2f", step=0.1)
+    if st.button("Actualizar Tasa en todo el Sistema"):
+        if actualizar_tasa_db(nueva_tasa):
+            st.success(f"Tasa cambiada a {nueva_tasa}. ¡Sincronizado con la PC!")
             st.rerun()
-        else:
-            st.error("No se pudo actualizar la tasa.")
 
-# --- 1. ESCÁNER ---
+# --- 📸 ESCÁNER ---
 elif opcion == "📸 Escáner":
-    st.subheader("Escanear Código")
+    st.subheader("Escaneo de Barras")
     foto = st.camera_input("Enfoca el producto")
     if foto:
-        imagen = Image.open(foto)
-        codigos = decode(imagen)
-        if codigos:
-            lectura = codigos[0].data.decode('utf-8').strip()
-            st.session_state.codigo_escaneado = lectura[1:] if len(lectura) == 13 and lectura.startswith('0') else lectura
-            st.success(f"✅ Detectado: {st.session_state.codigo_escaneado}")
-            st.info("Pasa a 'Venta' o 'Gestión'.")
+        img = Image.open(foto)
+        detect = decode(img)
+        if detect:
+            raw = detect[0].data.decode('utf-8').strip()
+            st.session_state.codigo_escaneado = raw[1:] if len(raw) == 13 and raw.startswith('0') else raw
+            st.success(f"Código: {st.session_state.codigo_escaneado}")
+            st.info("Ahora ve a 'Vender' o 'Gestión 360°'")
 
-# --- 2. REGISTRAR VENTA ---
-elif opcion == "🛒 Registrar Venta":
-    st.subheader("Nueva Venta")
-    cod_v = st.text_input("Código:", value=st.session_state.codigo_escaneado)
-    if cod_v:
-        res = supabase.table("productos").select("*").eq("codigo", cod_v).execute()
+# --- 🛒 VENDER ---
+elif opcion == "🛒 Vender":
+    st.subheader("Punto de Venta Móvil")
+    cod = st.text_input("Código:", value=st.session_state.codigo_escaneado)
+    if cod:
+        res = supabase.table("productos").select("*").eq("codigo", cod).execute()
         if res.data:
             p = res.data[0]
             st.write(f"### {p['nombre']}")
-            
-            # Recalculamos la venta en Bs con la tasa fresca
-            v_usd = p['venta_usd']
-            v_bs_fresca = v_usd * tasa
-            
-            c1, c2 = st.columns(2)
-            c1.metric("Precio $", f"{v_usd:.2f}")
-            c2.metric("Precio Bs", f"{v_bs_fresca:.2f}")
+            st.metric("Precio Final", f"{p['venta_bs']:.2f} Bs", f"{p['venta_usd']} $")
             
             cant = st.number_input("Cantidad", min_value=1, value=1)
-            if st.button("Confirmar Venta"):
-                # Registrar historial
+            if st.button("💸 REGISTRAR VENTA"):
+                # Guardamos en historial
                 supabase.table("historial_ventas").insert({
                     "producto": p['nombre'], "cantidad": cant, 
-                    "total_usd": v_usd * cant, "fecha": datetime.now().isoformat()
+                    "total_usd": p['venta_usd'] * cant, 
+                    "vendedor": st.session_state.auth['usuario'],
+                    "fecha": datetime.now().isoformat()
                 }).execute()
-                # Restar existencia
-                if 'existencia' in p:
-                    supabase.table("productos").update({"existencia": p['existencia'] - cant}).eq("identifi", p['identifi']).execute()
-                st.success("¡Venta completada!")
+                st.success("Venta guardada.")
                 st.session_state.codigo_escaneado = ""
-        else: st.error("No encontrado.")
+        else: st.error("Producto no registrado.")
 
-# --- 3. GESTIÓN 360 ---
+# --- 📝 GESTIÓN 360° (ALGORITMO TOTAL) ---
 elif opcion == "📝 Gestión 360°":
-    # Aquí iría el algoritmo 360 que ya perfeccionamos antes
-    st.subheader("Algoritmo 360°")
-    # (Poner aquí la lógica del mensaje anterior)
+    st.subheader("Cerebro de Precios 360°")
+    cod_g = st.text_input("Código para gestionar:", value=st.session_state.codigo_escaneado)
+    if cod_g:
+        res = supabase.table("productos").select("*").eq("codigo", cod_g).execute()
+        prod = res.data[0] if res.data else {}
+        
+        with st.form("brain_360"):
+            nombre = st.text_input("Nombre", value=prod.get('nombre', ''))
+            margen = st.number_input("Margen %", value=float(prod.get('margen', 30.0)))
+            st.write("---")
+            c1, c2 = st.columns(2)
+            in_cbs = c1.number_input("Costo Bs", value=0.0)
+            in_cusd = c2.number_input("Costo USD", value=0.0)
+            in_vbs = c1.number_input("Venta Bs", value=0.0)
+            in_vusd = c2.number_input("Venta USD", value=0.0)
+            
+            if st.form_submit_button("🧮 CALCULAR Y GUARDAR"):
+                m = margen / 100
+                # Lógica de prioridad de entrada
+                if in_cbs > 0: c_bs, c_usd = in_cbs, in_cbs/tasa; v_usd = c_usd*(1+m); v_bs = v_usd*tasa
+                elif in_cusd > 0: c_usd, c_bs = in_cusd, in_cusd*tasa; v_usd = c_usd*(1+m); v_bs = v_usd*tasa
+                elif in_vbs > 0: v_bs, v_usd = in_vbs, in_vbs/tasa; c_usd = v_usd/(1+m); c_bs = c_usd*tasa
+                elif in_vusd > 0: v_usd, v_bs = in_vusd, in_vusd*tasa; c_usd = v_usd/(1+m); c_bs = c_usd*tasa
+                else: st.error("Mete al menos un precio, mano."); st.stop()
 
-# --- 4. HISTORIAL E INVENTARIO ---
+                datos = {
+                    "codigo": cod_g, "nombre": nombre.upper(), "margen": margen,
+                    "costo_bs": c_bs, "costo_usd": c_usd, "venta_bs": v_bs, "venta_usd": v_usd
+                }
+                if prod: supabase.table("productos").update(datos).eq("identifi", prod['identifi']).execute()
+                else: supabase.table("productos").insert(datos).execute()
+                st.success("Sincronizado 360°")
+
+# --- 📋 HISTORIAL ---
 elif opcion == "📋 Historial":
+    st.subheader("Últimas Ventas")
     res = supabase.table("historial_ventas").select("*").order("fecha", desc=True).limit(20).execute()
-    if res.data: st.table(pd.DataFrame(res.data)[['fecha', 'producto', 'cantidad', 'total_usd']])
+    if res.data: st.dataframe(pd.DataFrame(res.data)[['fecha', 'producto', 'total_usd', 'vendedor']])
 
-elif opcion == "📦 Inventario":
-    res = supabase.table("productos").select("codigo, nombre, venta_usd, existencia").execute()
-    if res.data: st.dataframe(pd.DataFrame(res.data), use_container_width=True)
-
-if st.sidebar.button("Salir"):
-    st.session_state.autenticado = False
+if st.sidebar.button("Cerrar Sesión"):
+    st.session_state.auth = None
     st.rerun()
