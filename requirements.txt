@@ -1,5 +1,0 @@
-streamlit
-supabase
-streamlit-camera-input-live
-pyzbar
-pillow
