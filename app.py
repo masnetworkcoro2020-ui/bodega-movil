@@ -3,9 +3,10 @@ from pyzbar.pyzbar import decode
 from PIL import Image
 from config import conectar
 import pandas as pd
+from datetime import datetime
 
-# 1. Configuración y Conexión
-st.set_page_config(page_title="Royal Essence ERP", layout="centered")
+# 1. Configuración Inicial
+st.set_page_config(page_title="Royal Essence Pro", layout="centered")
 supabase = conectar()
 
 def obtener_tasa():
@@ -17,110 +18,126 @@ def obtener_tasa():
 tasa = obtener_tasa()
 
 # --- ESTADO DE SESIÓN ---
-# Esto permite que la cámara y el texto se hablen
-if 'codigo_escaneado' not in st.session_state: 
-    st.session_state.codigo_escaneado = ""
+if 'auth' not in st.session_state: st.session_state.auth = None
+if 'codigo_escaneado' not in st.session_state: st.session_state.codigo_escaneado = ""
 
-st.title("🔄 Gestión 360° con Escáner")
-st.sidebar.metric("Tasa de Cambio", f"{tasa} Bs/$")
+# --- 2. MÓDULO CLAVE DE ACCESO (LOGIN) ---
+if not st.session_state.auth:
+    st.title("🔐 Acceso al Sistema")
+    u = st.text_input("Usuario:").lower().strip()
+    p = st.text_input("Clave:", type="password")
+    if st.button("Entrar"):
+        # Verifica contra tu tabla real de usuarios
+        res = supabase.table("usuarios").select("*").eq("usuario", u).eq("clave", p).execute()
+        if res.data:
+            st.session_state.auth = res.data[0]
+            st.rerun()
+        else: st.error("Usuario o clave incorrecta, mano.")
+    st.stop()
 
-menu = ["📸 Escáner", "📝 Gestión 360°", "📦 Inventario"]
-opcion = st.sidebar.radio("Ir a:", menu)
+# --- INTERFAZ POST-LOGIN ---
+st.sidebar.title(f"👤 {st.session_state.auth['usuario'].upper()}")
+st.sidebar.metric("Tasa BCV Actual", f"{tasa} Bs/$")
 
-# --- 1. ESCÁNER (Paso previo) ---
-if opcion == "📸 Escáner":
-    st.subheader("Paso 1: Escanear Producto")
-    foto = st.camera_input("Enfoca el código de barras")
+menu = ["📸 Escáner", "🛒 Ventas / Facturación", "📝 Gestión 360°", "📋 Historial", "⚙️ Ajustes Tasa"]
+opcion = st.sidebar.radio("Menú Principal", menu)
+
+# --- 3. MÓDULO AJUSTES TASA BCV ---
+if opcion == "⚙️ Ajustes Tasa":
+    st.subheader("⚙️ Configuración de Tasa")
+    nueva_tasa = st.number_input("Editar Tasa BCV:", value=tasa, format="%.2f")
+    if st.button("Actualizar Tasa"):
+        supabase.table("ajustes").update({"valor": nueva_tasa}).eq("id", 1).execute()
+        st.success(f"Tasa actualizada a {nueva_tasa} Bs.")
+        st.rerun()
+
+# --- 4. MÓDULO ESCÁNER (NO SE QUITA) ---
+elif opcion == "📸 Escáner":
+    st.subheader("📸 Escáner de Barras")
+    foto = st.camera_input("Enfoca el código")
     if foto:
-        imagen = Image.open(foto)
-        codigos = decode(imagen)
-        if codigos:
-            # Limpiamos el código (quitamos el 0 inicial si es EAN-13)
-            lectura = codigos[0].data.decode('utf-8').strip()
+        img = Image.open(foto)
+        detect = decode(img)
+        if detect:
+            # Lógica para quitar el 0 inicial si es necesario
+            lectura = detect[0].data.decode('utf-8').strip()
             st.session_state.codigo_escaneado = lectura[1:] if len(lectura) == 13 and lectura.startswith('0') else lectura
-            st.success(f"✅ Código capturado: {st.session_state.codigo_escaneado}")
-            st.info("Ahora ve a '📝 Gestión 360°' para ver o editar los precios.")
-        else:
-            st.warning("No se detectó ningún código. Intenta acercar más el producto.")
+            st.success(f"Capturado: {st.session_state.codigo_escaneado}")
+            st.info("Pasa a 'Ventas' o 'Gestión 360°'")
 
-# --- 2. GESTIÓN 360° (EL CEREBRO) ---
+# --- 5. MÓDULO VENTAS / FACTURACIÓN ---
+elif opcion == "🛒 Ventas / Facturación":
+    st.subheader("🛒 Registro de Venta")
+    cod_v = st.text_input("Código de Producto:", value=st.session_state.codigo_escaneado)
+    if cod_v:
+        res = supabase.table("productos").select("*").eq("codigo", cod_v).execute()
+        if res.data:
+            p = res.data[0]
+            st.write(f"### {p['nombre']}")
+            # El precio en Bs se ajusta a la tasa del momento
+            p_bs = float(p['venta_usd']) * tasa
+            st.metric("Precio de Venta", f"{p_bs:.2f} Bs", f"{p['venta_usd']} $")
+            
+            cant = st.number_input("Cantidad a vender:", min_value=1, value=1)
+            if st.button("✅ FACTURAR VENTA"):
+                # Se guarda en la tabla ventas (asegúrate que exista en tu Supabase)
+                venta_data = {
+                    "producto": p['nombre'],
+                    "cantidad": cant,
+                    "total_usd": float(p['venta_usd']) * cant,
+                    "vendedor": st.session_state.auth['usuario'],
+                    "fecha": datetime.now().isoformat()
+                }
+                supabase.table("ventas").insert(venta_data).execute()
+                st.success("¡Venta facturada con éxito!")
+                st.session_state.codigo_escaneado = ""
+        else: st.error("Producto no encontrado.")
+
+# --- 6. MÓDULO GESTIÓN 360° (TU CÁLCULO ORIGINAL) ---
 elif opcion == "📝 Gestión 360°":
-    st.subheader("Cerebro de Precios")
-    
-    # Campo de código conectado al escáner
-    cod_actual = st.text_input("Código del Producto:", value=st.session_state.codigo_escaneado)
-    
-    if cod_actual:
-        # Buscamos si ya existe en la nube
-        res = supabase.table("productos").select("*").eq("codigo", cod_actual).execute()
-        p = res.data[0] if res.data else {}
+    st.subheader("📝 Algoritmo de Precios 360°")
+    cod_g = st.text_input("Código:", value=st.session_state.codigo_escaneado)
+    if cod_g:
+        res = supabase.table("productos").select("*").eq("codigo", cod_g).execute()
+        prod = res.data[0] if res.data else {}
         
-        if p: st.info(f"📍 Editando: {p.get('nombre')}")
-        else: st.warning("✨ Producto nuevo detectado")
+        nombre = st.text_input("Nombre del Producto", value=prod.get('nombre', ''))
+        margen = st.number_input("Margen %", value=float(prod.get('margen', 30.0)))
+        
+        st.info("Ingresa UN precio para calcular el resto:")
+        c1, c2 = st.columns(2)
+        in_cbs = c1.number_input("Costo Bs", value=0.0)
+        in_cusd = c2.number_input("Costo USD", value=0.0)
+        in_vbs = c1.number_input("Venta Bs", value=0.0)
+        in_vusd = c2.number_input("Venta USD", value=0.0)
 
-        # Entradas principales
-        nombre = st.text_input("Nombre del Producto", value=p.get('nombre', ''))
-        margen = st.number_input("Margen de Ganancia %", value=float(p.get('margen', 25.0)), step=1.0)
-        
-        st.markdown("---")
-        st.write("💡 **Cálculo Automático:** Escribe en un cuadro y el resto se calculará solo.")
-        
-        col1, col2 = st.columns(2)
-        in_cbs = col1.number_input("Costo Bs (Compra)", value=0.0)
-        in_cusd = col2.number_input("Costo $ (Compra)", value=0.0)
-        in_vbs = col1.number_input("Venta Final Bs", value=0.0)
-        in_vusd = col2.number_input("Venta Final $", value=0.0)
-
-        # --- LÓGICA MATEMÁTICA 360° ---
+        # Lógica matemática original
         m = margen / 100
         c_bs, c_usd, v_bs, v_usd = 0.0, 0.0, 0.0, 0.0
 
-        if in_cbs > 0:
-            c_bs = in_cbs; c_usd = c_bs / tasa; v_usd = c_usd * (1 + m); v_bs = v_usd * tasa
-        elif in_cusd > 0:
-            c_usd = in_cusd; c_bs = c_usd * tasa; v_usd = c_usd * (1 + m); v_bs = v_usd * tasa
-        elif in_vbs > 0:
-            v_bs = in_vbs; v_usd = v_bs / tasa; c_usd = v_usd / (1 + m); c_bs = c_usd * tasa
-        elif in_vusd > 0:
-            v_usd = in_vusd; v_bs = v_usd * tasa; c_usd = v_usd / (1 + m); c_bs = c_usd * tasa
+        if in_cbs > 0: c_bs=in_cbs; c_usd=c_bs/tasa; v_usd=c_usd*(1+m); v_bs=v_usd*tasa
+        elif in_cusd > 0: c_usd=in_cusd; c_bs=c_usd*tasa; v_usd=c_usd*(1+m); v_bs=v_usd*tasa
+        elif in_vbs > 0: v_bs=in_vbs; v_usd=v_bs/tasa; c_usd=v_usd/(1+m); c_bs=c_usd*tasa
+        elif in_vusd > 0: v_usd=in_vusd; v_bs=v_usd*tasa; c_usd=v_usd/(1+m); c_bs=c_usd*tasa
         else:
-            # Si no hay cambios, muestra los valores actuales de la base de datos
-            c_usd = float(p.get('costo_usd', 0.0))
-            c_bs = float(p.get('costo_bs', 0.0))
-            v_usd = float(p.get('venta_usd', 0.0))
-            v_bs = v_usd * tasa
+            c_usd = float(prod.get('costo_usd', 0.0)); c_bs = float(prod.get('costo_bs', 0.0))
+            v_usd = float(prod.get('venta_usd', 0.0)); v_bs = v_usd * tasa
 
-        # Visualización de Resultados
-        with st.container(border=True):
-            st.write("### 📊 Resultado del Análisis")
-            res_col1, res_col2 = st.columns(2)
-            res_col1.metric("VENTA BS", f"{v_bs:.2f}")
-            res_col1.metric("COSTO BS", f"{c_bs:.2f}")
-            res_col2.metric("VENTA USD", f"{v_usd:.2f} $")
-            res_col2.metric("COSTO USD", f"{c_usd:.2f} $")
+        st.divider()
+        st.metric("PREVISIÓN DE VENTA", f"{v_bs:.2f} Bs", f"{v_usd:.2f} $")
 
-        # --- BOTÓN DE GUARDADO ---
-        if st.button("💾 GUARDAR CAMBIOS EN LA NUBE"):
+        if st.button("💾 GUARDAR CAMBIOS"):
             datos = {
-                "codigo": cod_actual,
-                "nombre": nombre.upper(),
-                "costo_bs": round(c_bs, 2),
-                "costo_usd": round(c_usd, 2),
-                "margen": margen,
-                "venta_usd": round(v_usd, 2),
-                "venta_bs": round(v_bs, 2)
+                "codigo": cod_g, "nombre": nombre.upper(), "margen": margen,
+                "costo_bs": round(c_bs, 2), "costo_usd": round(c_usd, 2),
+                "venta_bs": round(v_bs, 2), "venta_usd": round(v_usd, 2)
             }
-            if p: # Si existe, actualiza usando identifi
-                supabase.table("productos").update(datos).eq("identifi", p['identifi']).execute()
-            else: # Si es nuevo, inserta
-                supabase.table("productos").insert(datos).execute()
-            
-            st.success("✅ ¡Producto sincronizado perfectamente!")
-            st.session_state.codigo_escaneado = "" # Limpiar para el siguiente
+            if prod: supabase.table("productos").update(datos).eq("identifi", prod['identifi']).execute()
+            else: supabase.table("productos").insert(datos).execute()
+            st.success("Sincronizado con la nube.")
 
-# --- 3. INVENTARIO ---
-elif opcion == "📦 Inventario":
-    st.subheader("Lista de Precios")
-    res = supabase.table("productos").select("codigo, nombre, venta_usd, venta_bs").execute()
-    if res.data:
-        st.dataframe(pd.DataFrame(res.data), use_container_width=True)
+# --- 7. HISTORIAL ---
+elif opcion == "📋 Historial":
+    st.subheader("📋 Últimas Ventas")
+    res = supabase.table("ventas").select("*").order("id", desc=True).limit(20).execute()
+    if res.data: st.dataframe(pd.DataFrame(res.data))
