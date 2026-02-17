@@ -28,53 +28,62 @@ if opcion == "📸 Escáner Rápido":
         codigos = decode(imagen)
         
         if codigos:
-            # Guardamos el código en el "bolsillo"
+            # LECTURA EXACTA: No agregamos ni quitamos nada
             codigo = codigos[0].data.decode('utf-8').strip()
             st.session_state.codigo_escaneado = codigo
             
-            st.success(f"✅ Código {codigo} capturado.")
-            st.info("Ahora ve a 'Venta' o 'Inventario' en el menú, ¡ya el código te está esperando allá!")
+            st.success(f"✅ Código detectado: {codigo}")
+            st.info("El código ya está listo en 'Venta' o 'Inventario'.")
         else:
-            st.warning("No se leyó nada, intenta otra vez.")
+            st.warning("No se pudo leer. Intenta centrar bien el código de barras.")
 
-# --- OPCIÓN 2: VENTAS ---
+# --- OPCIÓN 2: VENTAS (Búsqueda Exacta) ---
 elif opcion == "🛒 Registrar Venta":
     st.subheader("Registrar Salida")
     
-    # Aquí el código aparece solo porque lo sacamos del "bolsillo"
+    # El código aparece tal cual se leyó
     cod_actual = st.text_input("Código de barras:", value=st.session_state.codigo_escaneado)
     
     if cod_actual:
+        # Buscamos la coincidencia exacta en la columna 'codigo'
         res = supabase.table("productos").select("*").eq("codigo", cod_actual).execute()
+        
         if res.data:
             p = res.data[0]
             st.write(f"### {p['nombre']}")
             st.metric("Precio", f"$ {p['venta_usd']}")
-            if st.button("Confirmar Venta (-1 unidad)"):
-                # Aquí restamos stock
-                nuevo_stock = p['existencia'] - 1
-                supabase.table("productos").update({"existencia": nuevo_stock}).eq("id", p['id']).execute()
-                st.success("¡Venta registrada!")
-                st.session_state.codigo_escaneado = "" # Limpiamos el bolsillo después de vender
+            
+            if p['existencia'] > 0:
+                if st.button("Confirmar Venta (-1 unidad)"):
+                    nuevo_stock = p['existencia'] - 1
+                    supabase.table("productos").update({"existencia": nuevo_stock}).eq("id", p['id']).execute()
+                    st.success(f"Venta de {p['nombre']} registrada. Quedan {nuevo_stock}.")
+                    st.session_state.codigo_escaneado = "" # Limpiamos para el siguiente
+            else:
+                st.error("⚠️ No hay stock disponible.")
         else:
-            st.error("Producto no encontrado. ¿Deseas registrarlo?")
+            st.error(f"El código {cod_actual} no existe. Ve a 'Agregar' para registrarlo.")
 
 # --- OPCIÓN 3: AGREGAR NUEVO ---
 elif opcion == "📝 Agregar al Inventario":
     st.subheader("Entrada de Mercancía")
     
-    # El código también aparece aquí solito
     with st.form("registro"):
+        # El código aparece exacto aquí también
         cod_form = st.text_input("Código:", value=st.session_state.codigo_escaneado)
         nombre = st.text_input("Nombre del producto:")
-        precio = st.number_input("Precio USD:", min_value=0.0)
-        stock = st.number_input("Cantidad:", min_value=1)
+        precio = st.number_input("Precio USD:", min_value=0.0, format="%.2f")
+        stock = st.number_input("Cantidad inicial:", min_value=1)
         
-        if st.form_submit_button("Guardar en Nube"):
-            # Lógica para insertar en Supabase
-            supabase.table("productos").insert({
-                "codigo": cod_form, "nombre": nombre.upper(), 
-                "venta_usd": precio, "existencia": stock
-            }).execute()
-            st.success("¡Guardado!")
-            st.session_state.codigo_escaneado = "" # Limpiamos
+        if st.form_submit_button("Guardar en Supabase"):
+            if cod_form and nombre:
+                supabase.table("productos").insert({
+                    "codigo": cod_form, 
+                    "nombre": nombre.upper(), 
+                    "venta_usd": precio, 
+                    "existencia": stock
+                }).execute()
+                st.success(f"✅ {nombre} guardado con código {cod_form}")
+                st.session_state.codigo_escaneado = "" # Limpiamos
+            else:
+                st.warning("Faltan datos obligatorios.")
