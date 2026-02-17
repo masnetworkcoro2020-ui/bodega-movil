@@ -4,9 +4,33 @@ from PIL import Image
 from config import conectar
 import pandas as pd
 
-# Configuración de Identidad
+# Configuración Inicial
 st.set_page_config(page_title="Inversiones Lyan", layout="centered")
 supabase = conectar()
+
+# --- SISTEMA DE LOGIN ---
+if 'autenticado' not in st.session_state:
+    st.session_state.autenticado = False
+
+if not st.session_state.autenticado:
+    st.title("🔐 Acceso - Inversiones Lyan")
+    usuario = st.text_input("Usuario")
+    clave = st.text_input("Contraseña", type="password")
+    
+    if st.button("Ingresar"):
+        # Buscamos en tu tabla 'usuarios'
+        res = supabase.table("usuarios").select("*").eq("usuario", usuario).eq("clave", clave).execute()
+        
+        if res.data:
+            st.session_state.autenticado = True
+            st.session_state.user_data = res.data[0]
+            st.success(f"Bienvenido {res.data[0]['nombre']}")
+            st.rerun()
+        else:
+            st.error("Usuario o clave incorrectos")
+    st.stop() # Detiene el resto del código si no está logueado
+
+# --- SI LLEGA AQUÍ, ES PORQUE SE LOGUEÓ ---
 
 def obtener_tasa():
     try:
@@ -19,8 +43,15 @@ tasa = obtener_tasa()
 if 'codigo_escaneado' not in st.session_state: 
     st.session_state.codigo_escaneado = ""
 
-st.title("🔄 Gestión 360° - Inversiones Lyan")
+# Encabezado con Logout
+col_t, col_l = st.columns([4, 1])
+col_t.title("🔄 Gestión 360°")
+if col_l.button("Salir"):
+    st.session_state.autenticado = False
+    st.rerun()
+
 st.sidebar.metric("Tasa de Cambio", f"{tasa} Bs/$")
+st.sidebar.write(f"👤: {st.session_state.user_data['nombre']}")
 
 # --- SECCIÓN 1: ESCÁNER ---
 st.subheader("📸 Escaneo Rápido")
@@ -30,13 +61,12 @@ if foto:
     codigos = decode(imagen)
     if codigos:
         lectura = codigos[0].data.decode('utf-8').strip()
-        # Limpia el 0 inicial si es EAN-13
         st.session_state.codigo_escaneado = lectura[1:] if len(lectura) == 13 and lectura.startswith('0') else lectura
         st.success(f"✅ Código: {st.session_state.codigo_escaneado}")
 
 st.divider()
 
-# --- SECCIÓN 2: EL CEREBRO 360 (MODIFICACIÓN) ---
+# --- SECCIÓN 2: EL CEREBRO 360 ---
 st.subheader("📝 Edición de Producto")
 cod_actual = st.text_input("Código:", value=st.session_state.codigo_escaneado)
 
@@ -56,7 +86,7 @@ if cod_actual:
     in_vbs = col1.number_input("Venta Bs", value=0.0)
     in_vusd = col2.number_input("Venta $", value=0.0)
 
-    # TU LÓGICA MATEMÁTICA 360 ORIGINAL
+    # Lógica Matemática 360
     m = margen / 100
     c_bs, c_usd, v_bs, v_usd = 0.0, 0.0, 0.0, 0.0
 
