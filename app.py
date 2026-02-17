@@ -46,59 +46,63 @@ elif opcion == "📝 Gestionar Producto":
     
     if cod_actual:
         res = supabase.table("productos").select("*").eq("codigo", cod_actual).execute()
-        
-        # Si existe, cargamos datos; si no, valores en cero
         p = res.data[0] if res.data else {}
         es_nuevo = len(p) == 0
         
         if not es_nuevo: st.warning(f"Editando: {p.get('nombre')}")
         else: st.info("✨ Registrando producto nuevo")
 
-        # --- EL ALGORITMO 360 EN EL FORMULARIO ---
-        with st.form("form_360"):
+        # --- EL FORMULARIO CON BOTÓN DE ENVÍO ---
+        with st.form("form_360_fijo"):
             nombre = st.text_input("Nombre del Producto", value=p.get('nombre', ''))
             
             col1, col2 = st.columns(2)
             with col1:
-                # Entrada de Costo Bs (Fijo)
-                c_bs = st.number_input("Costo Bs", value=float(p.get('costo_bs', 0)), format="%.2f")
+                # Entrada de Costo Bs (Fijo como en tu PC)
+                c_bs = st.number_input("Costo Bs", value=float(p.get('costo_bs', 0.0)), format="%.2f")
                 # Cálculo de Costo USD basado en Tasa
-                c_usd = c_bs / tasa if tasa > 0 else 0
-                st.write(f"📉 Costo USD: ${c_usd:.2d}")
+                c_usd = c_bs / tasa if tasa > 0 else 0.0
+                st.write(f"📉 Costo USD: ${c_usd:.2f}")
                 
             with col2:
                 # Margen de Ganancia
-                margen = st.number_input("Margen %", value=float(p.get('margen', 30)), step=1.0)
+                margen = st.number_input("Margen %", value=float(p.get('margen', 25.0)), step=1.0)
             
             st.markdown("---")
-            # CÁLCULO 360: Venta USD = Costo USD / (1 - Margen/100)
-            # (O la fórmula exacta que uses en tu PC)
-            v_usd_sugerida = c_usd / (1 - (margen/100)) if margen < 100 else 0
+            # CÁLCULO 360: Venta USD = Costo USD * (1 + Margen/100) según tu inventario.py
+            v_usd_sugerida = c_usd * (1 + (margen/100))
             
-            v_usd = st.number_input("Venta USD $ (Ajustable)", value=float(p.get('venta_usd', v_usd_sugerida)), format="%.2f")
+            v_usd = st.number_input("Venta USD $", value=float(p.get('venta_usd', v_usd_sugerida)), format="%.2f")
             
             # Venta Bs final basada en Venta USD * Tasa
             v_bs = v_usd * tasa
-            
             st.subheader(f"💰 Venta Final: {v_bs:.2f} Bs")
             
-            if st.form_submit_button("🚀 SINCRONIZAR 360 CON LA NUBE"):
-                datos = {
-                    "codigo": cod_actual,
-                    "nombre": nombre.upper(),
-                    "costo_bs": c_bs,
-                    "costo_usd": round(c_usd, 2),
-                    "margen": margen,
-                    "venta_usd": v_usd,
-                    "venta_bs": round(v_bs, 2)
-                }
-                
-                if es_nuevo:
-                    supabase.table("productos").insert(datos).execute()
-                    st.success("✅ ¡Registrado con éxito!")
+            # ¡ESTE ES EL BOTÓN QUE FALTABA!
+            enviar = st.form_submit_button("🚀 GUARDAR CAMBIOS 360°")
+            
+            if enviar:
+                if nombre:
+                    datos = {
+                        "codigo": cod_actual,
+                        "nombre": nombre.upper(),
+                        "costo_bs": c_bs,
+                        "costo_usd": round(c_usd, 2),
+                        "margen": margen,
+                        "venta_usd": v_usd,
+                        "venta_bs": round(v_bs, 2)
+                    }
+                    
+                    if es_nuevo:
+                        supabase.table("productos").insert(datos).execute()
+                        st.success("✅ ¡Registrado con éxito!")
+                    else:
+                        # Usamos identifi que es tu ID original de la tabla
+                        supabase.table("productos").update(datos).eq("identifi", p['identifi']).execute()
+                        st.success("✅ ¡Actualización 360 completada!")
+                    st.session_state.codigo_escaneado = ""
                 else:
-                    supabase.table("productos").update(datos).eq("identifi", p['identifi']).execute()
-                    st.success("✅ ¡Actualización 360 completada!")
+                    st.error("Debes poner un nombre al producto.")
 
 # --- INVENTARIO ---
 elif opcion == "📦 Inventario":
