@@ -28,24 +28,30 @@ if opcion == "📸 Escáner Rápido":
         codigos = decode(imagen)
         
         if codigos:
-            # LECTURA EXACTA: No agregamos ni quitamos nada
-            codigo = codigos[0].data.decode('utf-8').strip()
-            st.session_state.codigo_escaneado = codigo
+            # --- LIMPIEZA QUIRÚRGICA ---
+            lectura_raw = codigos[0].data.decode('utf-8').strip()
             
-            st.success(f"✅ Código detectado: {codigo}")
-            st.info("El código ya está listo en 'Venta' o 'Inventario'.")
+            # Si el código tiene 13 dígitos y empieza por 0, es un UPC-A de 12 convertido.
+            # Quitamos ese cero para que vuelvan a ser 12 exactos.
+            if len(lectura_raw) == 13 and lectura_raw.startswith('0'):
+                codigo_final = lectura_raw[1:]
+            else:
+                codigo_final = lectura_raw
+            
+            st.session_state.codigo_escaneado = codigo_final
+            
+            st.success(f"✅ Código detectado: {codigo_final}")
+            st.info(f"Dígitos leídos: {len(codigo_final)}")
+            st.info("Ya puedes ir a 'Venta' o 'Inventario'.")
         else:
-            st.warning("No se pudo leer. Intenta centrar bien el código de barras.")
+            st.warning("No se pudo leer. Intenta centrar bien el código.")
 
-# --- OPCIÓN 2: VENTAS (Búsqueda Exacta) ---
+# --- OPCIÓN 2: VENTAS ---
 elif opcion == "🛒 Registrar Venta":
     st.subheader("Registrar Salida")
-    
-    # El código aparece tal cual se leyó
     cod_actual = st.text_input("Código de barras:", value=st.session_state.codigo_escaneado)
     
     if cod_actual:
-        # Buscamos la coincidencia exacta en la columna 'codigo'
         res = supabase.table("productos").select("*").eq("codigo", cod_actual).execute()
         
         if res.data:
@@ -57,19 +63,17 @@ elif opcion == "🛒 Registrar Venta":
                 if st.button("Confirmar Venta (-1 unidad)"):
                     nuevo_stock = p['existencia'] - 1
                     supabase.table("productos").update({"existencia": nuevo_stock}).eq("id", p['id']).execute()
-                    st.success(f"Venta de {p['nombre']} registrada. Quedan {nuevo_stock}.")
-                    st.session_state.codigo_escaneado = "" # Limpiamos para el siguiente
+                    st.success(f"¡Venta registrada! Quedan {nuevo_stock}.")
+                    st.session_state.codigo_escaneado = "" 
             else:
-                st.error("⚠️ No hay stock disponible.")
+                st.error("⚠️ No hay stock.")
         else:
-            st.error(f"El código {cod_actual} no existe. Ve a 'Agregar' para registrarlo.")
+            st.error(f"El código {cod_actual} no existe en la base de datos.")
 
 # --- OPCIÓN 3: AGREGAR NUEVO ---
 elif opcion == "📝 Agregar al Inventario":
     st.subheader("Entrada de Mercancía")
-    
     with st.form("registro"):
-        # El código aparece exacto aquí también
         cod_form = st.text_input("Código:", value=st.session_state.codigo_escaneado)
         nombre = st.text_input("Nombre del producto:")
         precio = st.number_input("Precio USD:", min_value=0.0, format="%.2f")
@@ -83,7 +87,7 @@ elif opcion == "📝 Agregar al Inventario":
                     "venta_usd": precio, 
                     "existencia": stock
                 }).execute()
-                st.success(f"✅ {nombre} guardado con código {cod_form}")
-                st.session_state.codigo_escaneado = "" # Limpiamos
+                st.success(f"✅ Guardado con código: {cod_form}")
+                st.session_state.codigo_escaneado = ""
             else:
-                st.warning("Faltan datos obligatorios.")
+                st.warning("Llena los campos obligatorios.")
