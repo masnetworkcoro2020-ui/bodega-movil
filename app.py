@@ -5,82 +5,87 @@ from config import conectar
 import pandas as pd
 
 # 1. Configuración y Conexión
-st.set_page_config(page_title="Royal Essence Móvil", layout="centered")
+st.set_page_config(page_title="Royal Essence Móvil Pro", layout="centered")
 supabase = conectar()
+
+# --- FUNCIÓN PARA OBTENER TASA (Igual que en tu inventario.py) ---
+def obtener_tasa():
+    try:
+        res = supabase.table("ajustes").select("valor").eq("id", 1).execute()
+        return float(res.data[0]['valor']) if res.data else 40.0
+    except: return 40.0
+
+tasa = obtener_tasa()
 
 if 'codigo_escaneado' not in st.session_state:
     st.session_state.codigo_escaneado = ""
 
-st.title("🛒 Royal Essence - Bodega")
+st.title("🛒 Gestión de Bodega Pro")
+st.sidebar.info(f" Tasa actual: {tasa} Bs/$")
 
-menu = ["📸 Escáner / Buscar", "📝 Editar o Agregar", "📦 Inventario Completo"]
-opcion = st.sidebar.radio("Menú:", menu)
+menu = ["📸 Escáner", "📝 Editar Producto", "📦 Inventario Completo"]
+opcion = st.sidebar.radio("Ir a:", menu)
 
-# --- MÉDULA 1: ESCÁNER ---
-if opcion == "📸 Escáner / Buscar":
-    st.subheader("Paso 1: Escanear para encontrar")
-    foto = st.camera_input("Enfoca el producto")
+# --- ESCÁNER ---
+if opcion == "📸 Escáner":
+    st.subheader("Paso 1: Escanea el producto")
+    foto = st.camera_input("Enfoca el código")
     if foto:
         imagen = Image.open(foto)
         codigos = decode(imagen)
         if codigos:
             lectura = codigos[0].data.decode('utf-8').strip()
+            # Limpieza para códigos de 12 dígitos
             st.session_state.codigo_escaneado = lectura[1:] if len(lectura) == 13 and lectura.startswith('0') else lectura
-            st.success(f"✅ Detectado: {st.session_state.codigo_escaneado}")
-            st.info("Pasa a 'Editar o Agregar' para modificar los datos.")
-        else:
-            st.warning("No se leyó nada.")
+            st.success(f"✅ Código: {st.session_state.codigo_escaneado}")
+            st.info("Ve a 'Editar Producto' para ver toda la información.")
 
-# --- MÉDULA 2: EDITAR O AGREGAR (LA NUEVA FUNCIÓN) ---
-elif opcion == "📝 Editar o Agregar":
-    st.subheader("Modificar Datos de Producto")
+# --- EDITAR PRODUCTO (CON TODOS LOS CAMPOS DE TU TABLA) ---
+elif opcion == "📝 Editar Producto":
+    st.subheader("Ficha Completa del Producto")
     cod_actual = st.text_input("Código de barras:", value=st.session_state.codigo_escaneado)
     
     if cod_actual:
         res = supabase.table("productos").select("*").eq("codigo", cod_actual).execute()
         
-        # SI EL PRODUCTO EXISTE -> MODO EDICIÓN
         if res.data:
             p = res.data[0]
-            st.warning(f"Editando: {p.get('nombre')}")
-            
-            with st.form("form_edicion"):
-                nuevo_nombre = st.text_input("Nombre del producto", value=p.get('nombre'))
-                nuevo_precio = st.number_input("Precio USD $", value=float(p.get('venta_usd', 0)), format="%.2f")
-                # Si creaste la columna existencia, la editamos aquí
-                nueva_existencia = st.number_input("Existencia / Stock", value=int(p.get('existencia', 0))) if 'existencia' in p else None
+            with st.form("form_completo"):
+                st.markdown(f"### 📋 {p.get('nombre')}")
                 
-                if st.form_submit_button("✅ Guardar Cambios"):
-                    datos_update = {
-                        "nombre": nuevo_nombre.upper(),
-                        "venta_usd": nuevo_precio
-                    }
-                    if nueva_existencia is not None:
-                        datos_update["existencia"] = nueva_existencia
-                    
-                    # Usamos 'identifi' que es tu columna ID según la foto
-                    supabase.table("productos").update(datos_update).eq("identifi", p['identifi']).execute()
-                    st.success("¡Producto actualizado con éxito!")
-                    st.balloons()
-        
-        # SI NO EXISTE -> MODO AGREGAR NUEVO
-        else:
-            st.info("Este código no está registrado. Puedes agregarlo ahora:")
-            with st.form("form_nuevo"):
-                nom_n = st.text_input("Nombre del Nuevo Producto")
-                pre_n = st.number_input("Precio USD $", min_value=0.0, format="%.2f")
-                if st.form_submit_button("➕ Registrar Producto Nuevo"):
-                    supabase.table("productos").insert({
-                        "codigo": cod_actual, "nombre": nom_n.upper(), "venta_usd": pre_n
-                    }).execute()
-                    st.success("¡Registrado!")
+                nombre = st.text_input("Nombre del Producto", value=p.get('nombre'))
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    c_usd = st.number_input("Costo USD $", value=float(p.get('costo_usd', 0)), format="%.2f")
+                    v_usd = st.number_input("Venta USD $", value=float(p.get('venta_usd', 0)), format="%.2f")
+                with col2:
+                    margen = st.number_input("Margen %", value=float(p.get('margen', 25)))
+                    v_bs = st.number_input("Venta Bs (Referencial)", value=float(v_usd * tasa), format="%.2f")
+                
+                # Campo de existencia (si ya creaste la columna)
+                existencia = st.number_input("Existencia Actual", value=int(p.get('existencia', 0))) if 'existencia' in p else None
 
-# --- MÉDULA 3: INVENTARIO ---
+                if st.form_submit_button("💾 ACTUALIZAR TODO EN LA NUBE"):
+                    datos = {
+                        "nombre": nombre.upper(),
+                        "costo_usd": c_usd,
+                        "venta_usd": v_usd,
+                        "margen": margen,
+                        "venta_bs": v_bs,
+                        "costo_bs": c_usd * tasa # Calculado automático
+                    }
+                    if existencia is not None: datos["existencia"] = existencia
+                    
+                    supabase.table("productos").update(datos).eq("identifi", p['identifi']).execute()
+                    st.success("✅ ¡Información actualizada!")
+                    st.balloons()
+        else:
+            st.error("Producto no encontrado. Verifica el código.")
+
+# --- INVENTARIO ---
 elif opcion == "📦 Inventario Completo":
-    st.subheader("Lista de Productos")
-    try:
-        res = supabase.table("productos").select("codigo, nombre, venta_usd").execute()
-        if res.data:
-            st.dataframe(pd.DataFrame(res.data), use_container_width=True)
-    except Exception as e:
-        st.error(f"Error: {e}")
+    st.subheader("Vista Global")
+    res = supabase.table("productos").select("codigo, nombre, costo_usd, venta_usd, margen").execute()
+    if res.data:
+        st.dataframe(pd.DataFrame(res.data), use_container_width=True)
