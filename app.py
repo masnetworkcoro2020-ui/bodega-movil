@@ -54,7 +54,7 @@ st.sidebar.metric("Tasa de Cambio", f"{tasa} Bs/$")
 
 # opcion = st.sidebar.radio("Ir a:", menu)
 
-opcion = "📝 Gestión 360°"
+opcion = "📸 Escáner"
 
 # --- 1. ESCÁNER (Paso previo) ---
 
